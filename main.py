@@ -10,7 +10,7 @@ print(b"Machine ID: {}".format(machine_id))
 
 sta_if = network.WLAN(network.STA_IF)
 sta_if.ifconfig()
-broker = sta_if.ifconfig()[3]
+broker = sta_if.ifconfig()[2]
 
 hue = 0.0
 saturation = 0.0
