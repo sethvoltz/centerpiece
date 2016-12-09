@@ -42,12 +42,13 @@ def callback(topic, msg):
 
 
 def publish_state():
-    if relay_pin.value():
+    global powered_on
+    if powered_on:
         client.publish(topic_name(b"state"), b"on")
     else:
         client.publish(topic_name(b"state"), b"off")
 
-    print("Relay state: {}".format("on" if relay_pin.value() else "off"))
+    print("Light state: {}".format("on" if powered_on else "off"))
 
 
 def topic_name(topic):
@@ -78,6 +79,7 @@ def set_power(msg):
     global powered_on
     msg = msg.decode("utf-8") if isinstance(msg, bytes) else msg
     powered_on = msg == "on"
+    publish_state()
     update_strip()
 
 
