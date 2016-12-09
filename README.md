@@ -11,3 +11,4 @@ Example update pub:
 Connect to serial REPL: `sudo cu -l /dev/tty.SLAB_USBtoUART -s 115200`
 
 Load Code: `ampy --port /dev/tty.SLAB_USBtoUART put main.py`
+

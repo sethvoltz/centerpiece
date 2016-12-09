@@ -31,6 +31,15 @@ def callback(topic, msg):
                 set_saturation(payload)
             elif msg_type == b"i":
                 set_intensity(payload)
+            elif msg_type == b"hsi":
+                h, s, i = payload.split(b":")
+
+                if h:
+                    set_hue(h)
+                if s:
+                    set_saturation(s)
+                if i:
+                    set_intensity(i)
             elif msg_type == b"power":
                 set_power(payload)
             else:
