@@ -12,3 +12,4 @@ Connect to serial REPL: `sudo cu -l /dev/tty.SLAB_USBtoUART -s 115200`
 
 Load Code: `ampy --port /dev/tty.SLAB_USBtoUART put main.py`
 
+Get a list of currently connected clients by publishing to `light/identify` and looking at the topics that return.

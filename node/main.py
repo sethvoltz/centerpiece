@@ -48,6 +48,8 @@ def callback(topic, msg):
             print("Couldn't parse/handle message, ignoring.")
     elif topic == topic_name(b"config"):
         load_config(msg)
+    elif topic == b'light/identify':
+        publish_state()
 
 
 def publish_state():
@@ -118,6 +120,8 @@ def connect_and_subscribe():
         t = topic_name(topic)
         client.subscribe(t)
         print("Subscribed to {}".format(t))
+
+    client.subscribe(b'light/identify')
 
 
 def setup_neopixels(pin, count):
