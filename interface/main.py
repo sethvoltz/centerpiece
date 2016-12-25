@@ -14,9 +14,10 @@ sta_if = network.WLAN(network.STA_IF)
 sta_if.ifconfig()
 broker = sta_if.ifconfig()[2]
 
-hue = 0.0
-saturation = 0.0
-intensity = 0.0
+hues = []
+saturations = []
+intensities = []
+pixel_count = 0
 powered_on = False
 
 strip = None
@@ -25,47 +26,18 @@ client = None
 
 def callback(topic, msg):
     """MQTT callback and command router."""
-    if topic == topic_name(b"control"):
-        try:
-            msg_type, payload = msg.split(b":", 1)
-            if msg_type == b"h":
-                set_hue(payload)
-            elif msg_type == b"s":
-                set_saturation(payload)
-            elif msg_type == b"i":
-                set_intensity(payload)
-            elif msg_type == b"hsi":
-                h, s, i = payload.split(b":")
-
-                if h:
-                    set_hue(h)
-                if s:
-                    set_saturation(s)
-                if i:
-                    set_intensity(i)
-            elif msg_type == b"power":
-                set_power(payload)
-            else:
-                print("Unknown message type, ignoring")
-        except Exception:
-            print("Couldn't parse/handle message, ignoring.")
-    elif topic == topic_name(b"config"):
+    if topic == topic_name(b"program") or topic == topic_name(b"program", True):
+        set_program(msg)
+    elif topic == topic_name(b"config") or topic_name(b"config", True):
         load_config(msg)
-    elif topic == b'centerpiece/identify':
+    elif topic == topic_name(b'identify') or topic_name(b'identify', True):
         publish_identity()
 
 
 def publish_identity():
     """Publish this node's identity."""
-    client.publish(topic_name(b"identity"), b"node")
+    client.publish(topic_name(b"identity"), b"interface")
     print("Sent identity: {}".format(machine_id))
-
-
-def publish_state():
-    """Construct a topic name."""
-    global powered_on
-    client.publish(topic_name(b'state'), b'on' if powered_on else b'off')
-    print("Light state: {}".format('on' if powered_on else 'off'))
 
 
 def topic_name(topic, all_nodes=False):
@@ -73,26 +45,39 @@ def topic_name(topic, all_nodes=False):
     return b'/'.join([b'centerpiece', b'all' if all_nodes else machine_id, topic])
 
 
-def set_intensity(msg):
-    """Set the intensity of the pixels."""
-    global intensity
-    intensity = max(0.0, min(100.0, int(msg))) / 100.0
+def set_intensity(value, pixel=-1):
+    """Set the intensity of one or all pixels."""
+    global intensities
+    value = value.decode("utf-8") if isinstance(value, bytes) else value
+    intensity = max(0.0, min(100.0, int(value))) / 100.0
+    if pixel == -1:
+        intensities = [intensity] * pixel_count
+    else:
+        intensities[max(pixel_count - 1, min(0, pixel))] = intensity
     update_strip()
 
 
-def set_saturation(msg):
-    """Set the saturation of the pixels."""
-    global saturation
-    msg = msg.decode("utf-8") if isinstance(msg, bytes) else msg
-    saturation = max(0.0, min(100.0, float(msg))) / 100.0
+def set_saturation(value, pixel=-1):
+    """Set the saturation of one or all pixels."""
+    global saturations
+    value = value.decode("utf-8") if isinstance(value, bytes) else value
+    saturation = max(0.0, min(100.0, float(value))) / 100.0
+    if pixel == -1:
+        saturations = [saturation] * pixel_count
+    else:
+        saturations[max(pixel_count - 1, min(0, pixel))] = saturation
     update_strip()
 
 
-def set_hue(msg):
-    """Set the hue of the pixels."""
-    global hue
-    msg = msg.decode("utf-8") if isinstance(msg, bytes) else msg
-    hue = max(0.0, min(360.0, float(msg))) / 360.0
+def set_hue(value=-1):
+    """Set the hue of one or all pixels."""
+    global hues
+    value = value.decode("utf-8") if isinstance(value, bytes) else value
+    hue = max(0.0, min(360.0, float(value))) / 360.0
+    if pixel == -1:
+        hues = [hue] * pixel_count
+    else:
+        hues[max(pixel_count - 1, min(0, pixel))] = hue
     update_strip()
 
 
@@ -101,7 +86,6 @@ def set_power(msg):
     global powered_on
     msg = msg.decode("utf-8") if isinstance(msg, bytes) else msg
     powered_on = msg == "on"
-    publish_state()
     update_strip()
 
 
@@ -129,7 +113,7 @@ def connect_and_subscribe():
 
     print("Connected to {}".format(broker))
 
-    for topic in (b'config', b'control', b'identify'):
+    for topic in (b'config', b'program', b'identify'):
         subscribe(topic)
         subscribe(topic, all_nodes=True)
 
@@ -159,6 +143,9 @@ def load_config(msg):
     except (OSError, ValueError):
         print("Couldn't load config from JSON, bailing out.")
     else:
+        global pixel_count
+        pixel_count = config['led_count']
+
         set_hue(config['hue'])
         set_saturation(config['saturation'])
         set_intensity(config['intensity'])
