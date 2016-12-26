@@ -5,7 +5,7 @@ import network
 import ubinascii as binascii
 import math
 
-from umqtt.simple import MQTTClient
+from umqtt.robust import MQTTClient
 
 machine_id = binascii.hexlify(machine.unique_id())
 print(b"Machine ID: {}".format(machine_id))

@@ -5,7 +5,8 @@ import network
 import ubinascii as binascii
 import math
 
-from umqtt.simple import MQTTClient
+from umqtt.robust import MQTTClient
+from encoder import Encoder
 
 machine_id = binascii.hexlify(machine.unique_id())
 print(b"Machine ID: {}".format(machine_id))
@@ -14,9 +15,7 @@ sta_if = network.WLAN(network.STA_IF)
 sta_if.ifconfig()
 broker = sta_if.ifconfig()[2]
 
-hues = []
-saturations = []
-intensities = []
+pixels = []
 pixel_count = 0
 powered_on = False
 
@@ -26,11 +25,12 @@ client = None
 
 def callback(topic, msg):
     """MQTT callback and command router."""
+    print("Received topic {}, {}".format(topic, msg))
     if topic == topic_name(b"program") or topic == topic_name(b"program", True):
         set_program(msg)
-    elif topic == topic_name(b"config") or topic_name(b"config", True):
+    elif topic == topic_name(b"config") or topic == topic_name(b"config", True):
         load_config(msg)
-    elif topic == topic_name(b'identify') or topic_name(b'identify', True):
+    elif topic == topic_name(b'identify') or topic == topic_name(b'identify', True):
         publish_identity()
 
 
@@ -47,38 +47,38 @@ def topic_name(topic, all_nodes=False):
 
 def set_intensity(value, pixel=-1):
     """Set the intensity of one or all pixels."""
-    global intensities
+    global pixels
     value = value.decode("utf-8") if isinstance(value, bytes) else value
     intensity = max(0.0, min(100.0, int(value))) / 100.0
     if pixel == -1:
-        intensities = [intensity] * pixel_count
+        pixels = [[intensity if i == 2 else v for i, v in enumerate(sub)] for sub in pixels]
     else:
-        intensities[max(pixel_count - 1, min(0, pixel))] = intensity
-    update_strip()
+        pixels[max(0, min(pixel_count - 1, pixel))][2] = intensity
+    # update_strip()
 
 
 def set_saturation(value, pixel=-1):
     """Set the saturation of one or all pixels."""
-    global saturations
+    global pixels
     value = value.decode("utf-8") if isinstance(value, bytes) else value
     saturation = max(0.0, min(100.0, float(value))) / 100.0
     if pixel == -1:
-        saturations = [saturation] * pixel_count
+        pixels = [[saturation if i == 1 else v for i, v in enumerate(sub)] for sub in pixels]
     else:
-        saturations[max(pixel_count - 1, min(0, pixel))] = saturation
-    update_strip()
+        pixels[max(0, min(pixel_count - 1, pixel))][1] = saturation
+    # update_strip()
 
 
-def set_hue(value=-1):
+def set_hue(value, pixel=-1):
     """Set the hue of one or all pixels."""
-    global hues
+    global pixels
     value = value.decode("utf-8") if isinstance(value, bytes) else value
     hue = max(0.0, min(360.0, float(value))) / 360.0
     if pixel == -1:
-        hues = [hue] * pixel_count
+        pixels = [[hue if i == 0 else v for i, v in enumerate(sub)] for sub in pixels]
     else:
-        hues[max(pixel_count - 1, min(0, pixel))] = hue
-    update_strip()
+        pixels[max(0, min(pixel_count - 1, pixel))][0] = hue
+    # update_strip()
 
 
 def set_power(msg):
@@ -95,9 +95,11 @@ def update_strip():
         print("Strip hasn't been configured yet, can't update.")
         return
     if powered_on:
-        r, g, b, w = hsi_to_rgbw(hue, saturation, intensity)
-        r, g, b, w = int(r * 255), int(g * 255), int(b * 255), int(w * 255)
-        strip.fill((r, g, b, w))
+        for index, color in enumerate(pixels):
+            r, g, b, w = hsi_to_rgbw(color[0], color[1], color[2])
+            r, g, b, w = int(r * 255), int(g * 255), int(b * 255), int(w * 255)
+            strip[index] = (r, g, b, w)
+        strip.write()
     else:
         strip.fill((0, 0, 0, 0))
     strip.write()
@@ -134,7 +136,7 @@ def setup_neopixels(pin, count):
 
 
 def load_config(msg):
-    """Load an initializing config"""
+    """Load an initializing config."""
     print("Loading config: {}".format(msg))
 
     import ujson as json
@@ -143,8 +145,9 @@ def load_config(msg):
     except (OSError, ValueError):
         print("Couldn't load config from JSON, bailing out.")
     else:
-        global pixel_count
+        global pixel_count, pixels
         pixel_count = config['led_count']
+        pixels = [[0, 0, 0]] * pixel_count
 
         set_hue(config['hue'])
         set_saturation(config['saturation'])
@@ -153,19 +156,47 @@ def load_config(msg):
         setup_neopixels(config['gpio_pin'], config['led_count'])
 
 
+def setup_encoder():
+    """Initialize the rotary encoder."""
+    global rotary, rotary_lastval
+
+    rotary = Encoder(
+        pin_clk=12, pin_dt=14, pin_mode=machine.Pin.PULL_UP,
+        clicks=4, wrap=True, min_val=0, max_val=24)
+    rotary_lastval = rotary.value
+
+
+def check_encoder():
+    """Check for change in the rotary encoder position."""
+    global rotary, rotary_lastval
+
+    val = rotary.value
+    if rotary_lastval != val:
+        rotary_lastval = val
+        print(val)
+        set_hue(val / 24.0 * 360)
+        set_intensity(0)
+        set_intensity(5, val)
+        update_strip()
+
+
 def setup():
     """Startup initialization function."""
     connect_and_subscribe()
+    setup_encoder()
 
 
 def main_loop():
     """Microcontroller main loop."""
     while 1:
-        client.wait_msg()
+        client.check_msg()
+        check_encoder()
 
 
 def teardown():
     """Shutdown cleanup."""
+    rotary.close()
+
     try:
         client.disconnect()
         print("Disconnected.")
