@@ -97,7 +97,13 @@ class Encoder(object):
 
     @property
     def value(self):
+        """Return the current calculated encoder position."""
         return self._value // self.clicks
+
+    @value.setter
+    def value(self, val):
+        # Preserve sub-click value
+        self._value = self._value % self.clicks + val * self.clicks
 
     def reset(self):
         self._value = 0
@@ -110,6 +116,7 @@ class Encoder(object):
 
     def min_val(self, min_val):
         self.min_val = min_val
+
 
 def test(enc=None, **kwargs):
     from time import sleep_ms
