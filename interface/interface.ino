@@ -11,6 +11,7 @@
 
 // Programs
 #define PROGRAM_COUNT   6
+#define FRAME_DELAY_MS  33
 
 // Wifi
 #define WLAN_SSID       "get_chippy_with_it"
@@ -149,8 +150,11 @@ void setProgram(String program) {
 void mqttConnect() {
   // Loop until we're reconnected
   while (!mqttClient.connected()) {
-    strip.setPixelColor(0, hsi2rgbw(0, 1, 0.05));
+    strip.setPixelColor(NEOPIXEL_COUNT - 1, hsi2rgbw(60, 1, 0.05));
+    strip.setPixelColor(0, hsi2rgbw(60, 1, 0.05));
+    strip.setPixelColor(1, hsi2rgbw(60, 1, 0.05));
     strip.show();
+
     cancelLED(false);
     acceptLED(false);
     Serial.print("Attempting MQTT connection...");
@@ -173,6 +177,7 @@ void mqttConnect() {
       Serial.print("failed, rc=");
       Serial.print(mqttClient.state());
       Serial.println(" try again in 5 seconds");
+
       // Wait 5 seconds before retrying
       delay(5000);
     }
@@ -191,8 +196,14 @@ void acceptLED(bool state) {
 // =---------------------------------------------------------------------------------= Programs =--=
 
 void runProgramWhite(bool first) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(0, 1, 0.05)); }
-  strip.show();
+  static unsigned long updateTimer = millis();
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  if (first || updateTimeDiff > FRAME_DELAY_MS) {
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(0, 0, 0.05)); }
+    strip.show();
+    updateTimer = millis();
+  }
 }
 
 void runProgramCandle(bool first) {
@@ -201,8 +212,18 @@ void runProgramCandle(bool first) {
 }
 
 void runProgramRainbow(bool first) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(120, 1, 0.05)); }
-  strip.show();
+  static unsigned long updateTimer = millis();
+  static float hueOffset = 0.0;
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  if (first || updateTimeDiff > FRAME_DELAY_MS) {
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
+      strip.setPixelColor(i, hsi2rgbw(floatmod((i + hueOffset) * (360 / NEOPIXEL_COUNT), 360), 1, 0.05));
+    }
+    strip.show();
+    hueOffset = floatmod(360 + hueOffset - 0.25, 360);
+    updateTimer = millis();
+  }
 }
 
 void runProgramTwinkle(bool first) {
@@ -259,6 +280,7 @@ void encoderLoop() {
       Serial.print("Dial = ");
       Serial.println(dialPosition);
       displayProgram = dialPosition;
+      updateDisplay(true);
     }
   }
 }
@@ -340,6 +362,11 @@ void setup() {
   Serial.begin(115200);
   delay(100);
 
+  // Change Watchdog Timer to longer wait
+  ESP.wdtDisable();
+  ESP.wdtEnable(WDTO_8S);
+
+  // Setup :allthethings:
   setupButtons();
   setupNeopixels();
   setupWifi();
