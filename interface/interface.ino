@@ -11,7 +11,8 @@
 
 // Programs
 #define PROGRAM_COUNT   6
-#define FRAME_DELAY_MS  33
+#define FRAME_DELAY_MS  33  // 30 fps
+#define BLINK_DELAY_MS  333 // 3 fps
 
 // Wifi
 #define WLAN_SSID       "get_chippy_with_it"
@@ -192,6 +193,11 @@ void acceptLED(bool state) {
   digitalWrite(ACCEPT_LED_PIN, state ? HIGH : LOW);
 }
 
+void updateEncoder(int newPosition) {
+  int offset = encoder.read() % ENCODER_TICKS;
+  encoder.write((newPosition * ENCODER_TICKS) + offset);
+}
+
 
 // =---------------------------------------------------------------------------------= Programs =--=
 
@@ -218,8 +224,8 @@ void runProgramRainbow(bool first) {
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
     for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
-      float hue = floatmod((i + hueOffset) * (360 / NEOPIXEL_COUNT);
-      strip.setPixelColor(i, hsi2rgbw(hue, 360), 1, 0.05));
+      float hue = floatmod((i + hueOffset) * (360 / NEOPIXEL_COUNT), 360);
+      strip.setPixelColor(i, hsi2rgbw(hue, 1, 0.05));
     }
     strip.show();
     hueOffset = floatmod(360 + hueOffset - 0.25, 360);
@@ -305,26 +311,45 @@ void encoderLoop() {
 
     if (newDial != dialPosition) {
       dialPosition = newDial;
-      Serial.print("Dial = ");
-      Serial.println(dialPosition);
       displayProgram = dialPosition;
       updateDisplay(true);
+
+      Serial.print("currentProgram: ");
+      Serial.print(currentProgram);
+      Serial.print(", displayProgram: ");
+      Serial.println(displayProgram);
     }
   }
 }
 
 void buttonLoop() {
+  static unsigned long updateTimer = millis();
+  static bool lightState = true;
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  if (updateTimeDiff > BLINK_DELAY_MS) {
+    if (displayProgram != currentProgram) {
+      cancelLED(lightState);
+      acceptLED(lightState);
+      lightState = !lightState;
+    } else {
+      cancelLED(true);
+      acceptLED(true);
+    }
+    updateTimer = millis();
+  }
+
   bool lastCancel = cancelButton;
   bool lastAccept = acceptButton;
 
   int sensorValue = analogRead(BUTTON_READ_PIN);
-  if (sensorValue >= 407 && sensorValue <= 467) {
+  if (sensorValue >= 417 && sensorValue <= 457) {
     cancelButton = true;
     acceptButton = false;
-  } else if (sensorValue >= 531 && sensorValue <= 591) {
+  } else if (sensorValue >= 541 && sensorValue <= 581) {
     cancelButton = false;
     acceptButton = true;
-  } else if (sensorValue >= 684 && sensorValue <= 744) {
+  } else if (sensorValue >= 694 && sensorValue <= 734) {
     cancelButton = true;
     acceptButton = true;
   } else {
@@ -332,12 +357,21 @@ void buttonLoop() {
     acceptButton = false;
   }
 
-  if (lastCancel != cancelButton) {
-    cancelLED(!cancelButton);
-  }
-
   if (lastAccept != acceptButton) {
     acceptLED(!acceptButton);
+    if (!acceptButton) {
+      // Button up, trigger accept
+      currentProgram = displayProgram;
+    }
+  }
+
+  if (lastCancel != cancelButton) {
+    cancelLED(!cancelButton);
+    if (!cancelButton) {
+      // Button up, trigger cancel
+      displayProgram = currentProgram;
+      updateEncoder(currentProgram);
+    }
   }
 }
 
@@ -404,7 +438,7 @@ void setup() {
 void loop() {
   if (!mqttClient.connected()) { mqttConnect(); }
   mqttClient.loop();
-  encoderLoop();
   buttonLoop();
+  encoderLoop();
   updateDisplay();
 }
