@@ -207,7 +207,7 @@ void runProgramWhite(bool first) {
 }
 
 void runProgramCandle(bool first) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(60, 1, 0.05)); }
+  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(60, 0.5, 0.05)); }
   strip.show();
 }
 
@@ -218,7 +218,8 @@ void runProgramRainbow(bool first) {
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
     for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
-      strip.setPixelColor(i, hsi2rgbw(floatmod((i + hueOffset) * (360 / NEOPIXEL_COUNT), 360), 1, 0.05));
+      float hue = floatmod((i + hueOffset) * (360 / NEOPIXEL_COUNT);
+      strip.setPixelColor(i, hsi2rgbw(hue, 360), 1, 0.05));
     }
     strip.show();
     hueOffset = floatmod(360 + hueOffset - 0.25, 360);
@@ -227,12 +228,12 @@ void runProgramRainbow(bool first) {
 }
 
 void runProgramTwinkle(bool first) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(180, 1, 0.05)); }
+  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(200, 1, 0.05)); }
   strip.show();
 }
 
 void runProgramNight(bool first) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(240, 1, 0.05)); }
+  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(250, 1, 0.05)); }
   strip.show();
 }
 
