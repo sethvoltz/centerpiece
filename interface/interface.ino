@@ -31,6 +31,11 @@
 #define ENCODER_PINB    14
 #define ENCODER_TICKS   4
 
+// Buttons
+#define BUTTON_READ_PIN A0
+#define CANCEL_LED_PIN  5
+#define ACCEPT_LED_PIN  4
+
 
 // =----------------------------------------------------------------------------------= Globals =--=
 
@@ -53,6 +58,10 @@ Encoder encoder(ENCODER_PINA, ENCODER_PINB);
 long encoderPosition = -999;
 int dialPosition = 0;
 int encoderSize = PROGRAM_COUNT * ENCODER_TICKS;
+
+// Buttons
+bool cancelButton = false;
+bool acceptButton = false;
 
 
 // =--------------------------------------------------------------------------------= Utilities =--=
@@ -142,12 +151,16 @@ void mqttConnect() {
   while (!mqttClient.connected()) {
     strip.setPixelColor(0, hsi2rgbw(0, 1, 0.05));
     strip.show();
+    cancelLED(false);
+    acceptLED(false);
     Serial.print("Attempting MQTT connection...");
 
     // Attempt to connect
     if (mqttClient.connect(clientId.c_str())) {
       strip.setPixelColor(0, hsi2rgbw(120, 1, 0.05));
       strip.show();
+      cancelLED(true);
+      acceptLED(true);
 
       Serial.println("connected");
       sendIdentity();
@@ -164,6 +177,14 @@ void mqttConnect() {
       delay(5000);
     }
   }
+}
+
+void cancelLED(bool state) {
+  digitalWrite(CANCEL_LED_PIN, state ? HIGH : LOW);
+}
+
+void acceptLED(bool state) {
+  digitalWrite(ACCEPT_LED_PIN, state ? HIGH : LOW);
 }
 
 
@@ -242,6 +263,34 @@ void encoderLoop() {
   }
 }
 
+void buttonLoop() {
+  bool lastCancel = cancelButton;
+  bool lastAccept = acceptButton;
+
+  int sensorValue = analogRead(BUTTON_READ_PIN);
+  if (sensorValue >= 407 && sensorValue <= 467) {
+    cancelButton = true;
+    acceptButton = false;
+  } else if (sensorValue >= 531 && sensorValue <= 591) {
+    cancelButton = false;
+    acceptButton = true;
+  } else if (sensorValue >= 684 && sensorValue <= 744) {
+    cancelButton = true;
+    acceptButton = true;
+  } else {
+    cancelButton = false;
+    acceptButton = false;
+  }
+
+  if (lastCancel != cancelButton) {
+    cancelLED(!cancelButton);
+  }
+
+  if (lastAccept != acceptButton) {
+    acceptLED(!acceptButton);
+  }
+}
+
 void setupWifi() {
   int pixel = 0;
 
@@ -281,10 +330,17 @@ void setupNeopixels() {
   strip.show();
 }
 
+void setupButtons() {
+  pinMode(BUTTON_READ_PIN, INPUT_PULLUP);
+  pinMode(CANCEL_LED_PIN, OUTPUT);
+  pinMode(ACCEPT_LED_PIN, OUTPUT);
+}
+
 void setup() {
   Serial.begin(115200);
   delay(100);
 
+  setupButtons();
   setupNeopixels();
   setupWifi();
   setupMQTT();
@@ -294,5 +350,6 @@ void loop() {
   if (!mqttClient.connected()) { mqttConnect(); }
   mqttClient.loop();
   encoderLoop();
+  buttonLoop();
   updateDisplay();
 }
