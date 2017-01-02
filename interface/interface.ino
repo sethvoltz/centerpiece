@@ -142,8 +142,35 @@ void sendIdentity() {
   mqttClient.publish(makeTopic("identity").c_str(), "online");
 }
 
-void setProgram(String program) {
-  Serial.print("Setting program to "); Serial.println(program);
+void setProgram(String programName) {
+  int program = -1;
+
+  if (programName.equals("white")) { program = 0; }
+  else if (programName.equals("candle")) { program = 1; }
+  else if (programName.equals("rainbow")) { program = 2; }
+  else if (programName.equals("twinkle")) { program = 3; }
+  else if (programName.equals("night")) { program = 4; }
+  else if (programName.equals("dance")) { program = 5; }
+
+  if (program >= 0 && program != currentProgram) {
+    currentProgram = program;
+    displayProgram = program;
+    Serial.print("Setting program to "); Serial.println(programName);
+  }
+}
+
+void sendProgram() {
+  String program;
+  switch(displayProgram) {
+    case 0: program = "white"; break;
+    case 1: program = "candle"; break;
+    case 2: program = "rainbow"; break;
+    case 3: program = "twinkle"; break;
+    case 4: program = "night"; break;
+    case 5: program = "dance"; break;
+  }
+
+  mqttClient.publish(makeTopic("program", true).c_str(), program.c_str());
 }
 
 // Function to connect and reconnect as necessary to the MQTT server.
@@ -194,8 +221,7 @@ void acceptLED(bool state) {
 }
 
 void updateEncoder(int newPosition) {
-  int offset = encoder.read() % ENCODER_TICKS;
-  encoder.write((newPosition * ENCODER_TICKS) + offset);
+  encoder.write(newPosition * ENCODER_TICKS);
 }
 
 
@@ -362,6 +388,7 @@ void buttonLoop() {
     if (!acceptButton) {
       // Button up, trigger accept
       currentProgram = displayProgram;
+      sendProgram();
     }
   }
 
