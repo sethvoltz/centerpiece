@@ -237,8 +237,35 @@ void runProgramNight(bool first) {
 }
 
 void runProgramDance(bool first) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(300, 1, 0.05)); }
-  strip.show();
+  static unsigned long updateTimer = millis();
+  static float danceOffset = 0.0;
+  static float danceCurrent[NEOPIXEL_COUNT];
+  static float danceTarget[NEOPIXEL_COUNT];
+
+  if (first) {
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { danceCurrent[i] = random(360); }
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { danceTarget[i] = random(360); }
+    danceOffset = 0;
+  }
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  if (first || updateTimeDiff > FRAME_DELAY_MS) {
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
+      float offset = (danceTarget[i] - danceCurrent[i]) / 50;
+      float hue = danceCurrent[i] + (offset * danceOffset);
+      strip.setPixelColor(i, hsi2rgbw(hue, 1, 0.05));
+    }
+    strip.show();
+
+    danceOffset++;
+    if (danceOffset > 50) {
+      for (int i = 0; i < NEOPIXEL_COUNT; ++i) { danceCurrent[i] = danceTarget[i]; } // copy
+      for (int i = 0; i < NEOPIXEL_COUNT; ++i) { danceTarget[i] = random(360); } // init
+      danceOffset = 0;
+    }
+
+    updateTimer = millis();
+  }
 }
 
 
