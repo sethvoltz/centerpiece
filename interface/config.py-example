@@ -1,9 +1,0 @@
-"""Config file."""
-
-# Wifi
-ssid = b"wifi name"
-psk = b"wifi password"
-
-# Hardware
-gpio_pin = 15
-led_count = 24
