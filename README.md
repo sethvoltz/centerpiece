@@ -59,16 +59,19 @@ This would be modified to take the "true" time, in millis since the UNIX epoc, a
 
 ## Notes
 
-Example config pub:
-`mosquitto_pub -h localhost -t "light/abdec600/config" -m '{"hue":0,"saturation":100,"intensity":5,"power":"on","gpio_pin":15,"led_count":1}'`
+Start the Mosquitto server localhost:
+`mosquitto -c /usr/local/etc/mosquitto/mosquitto.conf`
+
+Subscribe to identify announcements:
+`mosquitto_sub -t 'centerpiece/+/identity' -v`
 
 Example update pub:
-`mosquitto_pub -h localhost -t "light/abdec600/control" -m 'h:120'`
+`mosquitto_pub -h localhost -t "centerpiece/abdec600/program" -m 'party'`
 
-Connect to serial REPL: `sudo cu -l /dev/tty.SLAB_USBtoUART -s 115200`
+Connect to serial REPL: `sudo cu -l /dev/tty.SLAB_USBtoUART -s 115200` (or use the PlatformIO connector)
 
 Load Code: `ampy --port /dev/tty.SLAB_USBtoUART put main.py`
 
-Get a list of currently connected clients by publishing to `light/identify` and looking at the topics that return.
+Get a list of currently connected clients by publishing to `centerpiece/all/identify` and looking at the topics that return.
 
 Current time with nanoseconds and millis on Unix: `date +%s%N`, `echo $(($(date +%s%N)/1000000))`
