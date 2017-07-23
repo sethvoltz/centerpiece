@@ -1,5 +1,15 @@
 # Centerpiece Light Control
 
+## Project Layout
+
+This project is divided into three main parts, each which handles a distinct function within the centerpiece control ecosystem:
+
+- Controller -- This is the MQTT server with controls to bring the nodes and interface online and handle bootstrap and traffic
+- Interface -- This is the UI of the remote control box. It handles button inputs and drives the LED ring and button displays
+- Node -- This is the remote candle node which connects to the Controller and receives commands from the Interface.
+
+The most complicated part is the Interface because of the complexity of the LED ring and the rules around setting mode. Second to that is the Node as it has to reliably run the desired programs for long stretches of time and ensure continuous connection to the Controller. Lastly, the Controller is the simplest as it is mostly just utilities on top of the MQTT server.
+
 ## Controller and Modes
 
 A quick test with one node shows that it's possible to get a comfortable 10 messages per second and a spotty 20-30 messages per second throughput. This suggests that node control should primarily be to set the current mode, and not to control every change. Responsiveness seems fairly good, however, so doing sound-reactive beats might still be a possibility.
@@ -9,12 +19,12 @@ A quick test with one node shows that it's possible to get a comfortable 10 mess
 - White -- steady light, used to illuminate the plant
 - Candle flicker -- random flicker of brightness and duration, maybe tint
 - Rainbow fade -- cycle through the color wheel at full saturation
-- Synchronized rainbow fade -- same as rainbow fade but all nodes syncronized
+- Synchronized rainbow fade -- same as rainbow fade but all nodes synchronized
 - Twinkle -- light blue and white strobes randomly spaced
 - Night sky -- shades of blue and purple rolling fade, twinkle mixed in
 - Manual color -- rotary encoder to send single HSI to all nodes
 - Dance mode -- fade between random colors with rotary BPM select
-- Synchronized dance mode -- same as dance mode but all nodes syncronized
+- Synchronized dance mode -- same as dance mode but all nodes synchronized
 
 ### Control Commands
 

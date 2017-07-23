@@ -1,4 +1,0 @@
-"""Config file."""
-
-ssid = b"wifi name"
-psk = b"wifi password"

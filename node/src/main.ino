@@ -3,7 +3,6 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <Adafruit_NeoPixel.h>
-#include <Encoder.h>
 #include <math.h>
 
 
@@ -12,7 +11,7 @@
 // Programs
 #define PROGRAM_COUNT   6
 #define FRAME_DELAY_MS  33  // 30 fps
-#define BLINK_DELAY_MS  333 // 3 fps
+#define LED_INTENSITY   0.5 // 50% power
 
 // Wifi
 #define WLAN_SSID       "get_chippy_with_it"
@@ -24,26 +23,20 @@
 #define MQTT_ROOT       "centerpiece"
 
 // Neopixel
-#define NEOPIXEL_PIN    15
-#define NEOPIXEL_COUNT  24
+#define NEOPIXEL_PIN    14
+#define NEOPIXEL_COUNT  5
 // #define DEG_TO_RAD(X) (M_PI*(X)/180)
 
-// Encoder
-#define ENCODER_PINA    12
-#define ENCODER_PINB    14
-#define ENCODER_TICKS   4
-
 // Buttons
-#define BUTTON_READ_PIN A0
-#define CANCEL_LED_PIN  5
-#define ACCEPT_LED_PIN  4
+#define BUTTON_PIN      12
+#define DEBOUNCE_MS     30
+#define HOLD_TIME_MS    3000
 
 
 // =----------------------------------------------------------------------------------= Globals =--=
 
 // Programs
 int currentProgram = 0;
-int displayProgram = 0;
 
 // WiFi Client
 WiFiClient wifiClient;
@@ -55,15 +48,18 @@ String clientId(String(ESP.getChipId(), HEX));
 // Neopixel
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRBW + NEO_KHZ800);
 
-// Encoder
-Encoder encoder(ENCODER_PINA, ENCODER_PINB);
-long encoderPosition = -999;
-int dialPosition = 0;
-int encoderSize = PROGRAM_COUNT * ENCODER_TICKS;
-
 // Buttons
-bool cancelButton = false;
-bool acceptButton = false;
+int buttonValue = 0; // value read from button
+int buttonLastValue = 0; // buffered value of the button's previous state
+long buttonDownTime; // time the button was pressed down
+long buttonUpTime; // time the button was released
+bool ignoreUp = false; // whether to ignore the button release because the click+hold was triggered
+bool hasBoot = false; // Handle a bug where a short press is triggered on boot
+
+
+// =-------------------------------------------------------------------------------= Prototypes =--=
+
+void updateDisplay(bool first);
 
 
 // =--------------------------------------------------------------------------------= Utilities =--=
@@ -119,6 +115,7 @@ uint32_t hsi2rgbw(float H, float S, float I) {
     w = 255 * (1 - S) * I;
   }
 
+  // return strip.Color(neopix_gamma[r], neopix_gamma[g], neopix_gamma[b], neopix_gamma[w]);
   return strip.Color(r, g, b, w);
 }
 
@@ -154,14 +151,14 @@ void setProgram(String programName) {
 
   if (program >= 0 && program != currentProgram) {
     currentProgram = program;
-    displayProgram = program;
     Serial.print("Setting program to "); Serial.println(programName);
+    updateDisplay(true);
   }
 }
 
-void sendProgram() {
+void nextProgram() {
   String program;
-  switch(displayProgram) {
+  switch((currentProgram + 1) % PROGRAM_COUNT) {
     case 0: program = "white"; break;
     case 1: program = "candle"; break;
     case 2: program = "rainbow"; break;
@@ -169,8 +166,7 @@ void sendProgram() {
     case 4: program = "night"; break;
     case 5: program = "dance"; break;
   }
-
-  mqttClient.publish(makeTopic("program", true).c_str(), program.c_str());
+  setProgram(program);
 }
 
 // Function to connect and reconnect as necessary to the MQTT server.
@@ -178,21 +174,15 @@ void sendProgram() {
 void mqttConnect() {
   // Loop until we're reconnected
   while (!mqttClient.connected()) {
-    strip.setPixelColor(NEOPIXEL_COUNT - 1, hsi2rgbw(60, 1, 0.05));
-    strip.setPixelColor(0, hsi2rgbw(60, 1, 0.05));
-    strip.setPixelColor(1, hsi2rgbw(60, 1, 0.05));
+    strip.setPixelColor(1, hsi2rgbw(60, 1, LED_INTENSITY));
     strip.show();
 
-    cancelLED(false);
-    acceptLED(false);
-    Serial.print("Attempting MQTT connection...");
+    Serial.print("Attempting MQTT connection... ");
 
     // Attempt to connect
     if (mqttClient.connect(clientId.c_str())) {
-      strip.setPixelColor(0, hsi2rgbw(120, 1, 0.05));
+      strip.setPixelColor(1, hsi2rgbw(120, 1, LED_INTENSITY));
       strip.show();
-      cancelLED(true);
-      acceptLED(true);
 
       Serial.println("connected");
       sendIdentity();
@@ -212,18 +202,6 @@ void mqttConnect() {
   }
 }
 
-void cancelLED(bool state) {
-  digitalWrite(CANCEL_LED_PIN, state ? HIGH : LOW);
-}
-
-void acceptLED(bool state) {
-  digitalWrite(ACCEPT_LED_PIN, state ? HIGH : LOW);
-}
-
-void updateEncoder(int newPosition) {
-  encoder.write(newPosition * ENCODER_TICKS);
-}
-
 
 // =---------------------------------------------------------------------------------= Programs =--=
 
@@ -232,14 +210,14 @@ void runProgramWhite(bool first) {
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(0, 0, 0.05)); }
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(0, 0, LED_INTENSITY)); }
     strip.show();
     updateTimer = millis();
   }
 }
 
 void runProgramCandle(bool first) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(60, 0.5, 0.05)); }
+  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(60, 0.5, LED_INTENSITY)); }
   strip.show();
 }
 
@@ -250,8 +228,7 @@ void runProgramRainbow(bool first) {
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
     for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
-      float hue = floatmod((i + hueOffset) * (360 / NEOPIXEL_COUNT), 360);
-      strip.setPixelColor(i, hsi2rgbw(hue, 1, 0.05));
+      strip.setPixelColor(i, hsi2rgbw(hueOffset, 1, LED_INTENSITY));
     }
     strip.show();
     hueOffset = floatmod(360 + hueOffset - 0.25, 360);
@@ -260,40 +237,41 @@ void runProgramRainbow(bool first) {
 }
 
 void runProgramTwinkle(bool first) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(200, 1, 0.05)); }
+  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(200, 1, LED_INTENSITY)); }
   strip.show();
 }
 
 void runProgramNight(bool first) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(250, 1, 0.05)); }
+  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(250, 1, LED_INTENSITY)); }
   strip.show();
 }
 
 void runProgramDance(bool first) {
   static unsigned long updateTimer = millis();
   static float danceOffset = 0.0;
-  static float danceCurrent[NEOPIXEL_COUNT];
-  static float danceTarget[NEOPIXEL_COUNT];
+  static float danceCurrent;
+  static float danceTarget;
 
   if (first) {
-    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { danceCurrent[i] = random(360); }
-    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { danceTarget[i] = random(360); }
+    danceCurrent = random(360);
+    danceTarget = random(360);
     danceOffset = 0;
   }
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
+    float offset = (danceTarget - danceCurrent) / 50;
+    float hue = danceCurrent + (offset * danceOffset);
+
     for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
-      float offset = (danceTarget[i] - danceCurrent[i]) / 50;
-      float hue = danceCurrent[i] + (offset * danceOffset);
-      strip.setPixelColor(i, hsi2rgbw(hue, 1, 0.05));
+      strip.setPixelColor(i, hsi2rgbw(hue, 1, LED_INTENSITY));
     }
     strip.show();
 
     danceOffset++;
     if (danceOffset > 50) {
-      for (int i = 0; i < NEOPIXEL_COUNT; ++i) { danceCurrent[i] = danceTarget[i]; } // copy
-      for (int i = 0; i < NEOPIXEL_COUNT; ++i) { danceTarget[i] = random(360); } // init
+      danceCurrent = danceTarget; // copy
+      danceTarget = random(360); // init
       danceOffset = 0;
     }
 
@@ -305,7 +283,7 @@ void runProgramDance(bool first) {
 // =---------------------------------------------------------------------------= Setup and Loop =--=
 
 void updateDisplay(bool first = false) {
-  switch(displayProgram) {
+  switch(currentProgram) {
     case 0: runProgramWhite(first); break;
     case 1: runProgramCandle(first); break;
     case 2: runProgramRainbow(first); break;
@@ -315,95 +293,43 @@ void updateDisplay(bool first = false) {
   }
 }
 
-void encoderLoop() {
-  // Reset position: encoder.write(0);
-  long newPosition;
-  long newDial;
-  newPosition = encoder.read();
-
-  if (newPosition != encoderPosition) {
-    if (newPosition >= encoderSize) {
-      newPosition = newPosition % encoderSize;
-      encoder.write(newPosition);
-    } else if (newPosition < 0) {
-      while (newPosition < 0) {
-        newPosition += encoderSize;
-      }
-      encoder.write(newPosition);
-    }
-
-    encoderPosition = newPosition;
-    long newDial = encoderPosition / ENCODER_TICKS;
-
-    if (newDial != dialPosition) {
-      dialPosition = newDial;
-      displayProgram = dialPosition;
-      updateDisplay(true);
-
-      Serial.print("currentProgram: ");
-      Serial.print(currentProgram);
-      Serial.print(", displayProgram: ");
-      Serial.println(displayProgram);
-    }
-  }
-}
-
 void buttonLoop() {
-  static unsigned long updateTimer = millis();
-  static bool lightState = true;
+  // Read the state of the button
+  buttonValue = digitalRead(BUTTON_PIN);
 
-  unsigned long updateTimeDiff = millis() - updateTimer;
-  if (updateTimeDiff > BLINK_DELAY_MS) {
-    if (displayProgram != currentProgram) {
-      cancelLED(lightState);
-      acceptLED(lightState);
-      lightState = !lightState;
+  // Test for button pressed and store the down time
+  if (buttonValue == LOW && buttonLastValue == HIGH && (millis() - buttonUpTime) > long(DEBOUNCE_MS)) {
+    buttonDownTime = millis();
+  }
+
+  // Test for button release and store the up time
+  if (buttonValue == HIGH && buttonLastValue == LOW && (millis() - buttonDownTime) > long(DEBOUNCE_MS)) {
+    if (ignoreUp == false) {
+      if (hasBoot) {
+        nextProgram();
+      } else {
+        hasBoot = true;
+      }
     } else {
-      cancelLED(true);
-      acceptLED(true);
+      ignoreUp = false;
     }
-    updateTimer = millis();
+    buttonUpTime = millis();
   }
 
-  bool lastCancel = cancelButton;
-  bool lastAccept = acceptButton;
-
-  int sensorValue = analogRead(BUTTON_READ_PIN);
-  if (sensorValue >= 417 && sensorValue <= 457) {
-    cancelButton = true;
-    acceptButton = false;
-  } else if (sensorValue >= 541 && sensorValue <= 581) {
-    cancelButton = false;
-    acceptButton = true;
-  } else if (sensorValue >= 694 && sensorValue <= 734) {
-    cancelButton = true;
-    acceptButton = true;
-  } else {
-    cancelButton = false;
-    acceptButton = false;
+  // Test for button held down for longer than the hold time
+  if (buttonValue == LOW && (millis() - buttonDownTime) > long(HOLD_TIME_MS)) {
+    ignoreUp = true;
+    buttonDownTime = millis();
+    // setupWifi(true);
+    Serial.println("TODO: Setup Wifi");
   }
 
-  if (lastAccept != acceptButton) {
-    acceptLED(!acceptButton);
-    if (!acceptButton) {
-      // Button up, trigger accept
-      currentProgram = displayProgram;
-      sendProgram();
-    }
-  }
-
-  if (lastCancel != cancelButton) {
-    cancelLED(!cancelButton);
-    if (!cancelButton) {
-      // Button up, trigger cancel
-      displayProgram = currentProgram;
-      updateEncoder(currentProgram);
-    }
-  }
+  buttonLastValue = buttonValue;
 }
 
 void setupWifi() {
   int pixel = 0;
+  int on = true;
 
   // Connect to WiFi access point.
   Serial.println(); Serial.println();
@@ -415,8 +341,11 @@ void setupWifi() {
     delay(500);
     Serial.print(".");
     if (pixel < NEOPIXEL_COUNT) {
-      strip.setPixelColor(pixel++, hsi2rgbw(0, 1, 0.05));
+      strip.setPixelColor(pixel++, hsi2rgbw(0, (on ? 1 : 0), LED_INTENSITY));
       strip.show();
+    } else {
+      on = !on;
+      pixel = 0;
     }
   }
   Serial.println();
@@ -427,7 +356,7 @@ void setupWifi() {
 
   Serial.print("Unique ID: "); Serial.println(clientId.c_str());
 
-  strip.setPixelColor(0, hsi2rgbw(60, 1, 0.05));
+  strip.setPixelColor(0, hsi2rgbw(60, 1, LED_INTENSITY));
   strip.show();
 }
 
@@ -441,10 +370,9 @@ void setupNeopixels() {
   strip.show();
 }
 
-void setupButtons() {
-  pinMode(BUTTON_READ_PIN, INPUT_PULLUP);
-  pinMode(CANCEL_LED_PIN, OUTPUT);
-  pinMode(ACCEPT_LED_PIN, OUTPUT);
+void setupButton() {
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  digitalWrite(BUTTON_PIN, HIGH);
 }
 
 void setup() {
@@ -456,7 +384,7 @@ void setup() {
   ESP.wdtEnable(WDTO_8S);
 
   // Setup :allthethings:
-  setupButtons();
+  setupButton();
   setupNeopixels();
   setupWifi();
   setupMQTT();
@@ -466,6 +394,5 @@ void loop() {
   if (!mqttClient.connected()) { mqttConnect(); }
   mqttClient.loop();
   buttonLoop();
-  encoderLoop();
   updateDisplay();
 }
