@@ -3,34 +3,41 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <Adafruit_NeoPixel.h>
+#include <WiFiManager.h>
 #include <math.h>
 
 
 // =----------------------------------------------------------------------------= Configuration =--=
 
 // Programs
-#define PROGRAM_COUNT   6
-#define FRAME_DELAY_MS  33  // 30 fps
-#define LED_INTENSITY   0.5 // 50% power
+#define PROGRAM_COUNT                 6
+#define FRAME_DELAY_MS                33  // 30 fps
+#define LED_INTENSITY                 0.5 // 50% power
 
 // Wifi
-#define WLAN_SSID       "get_chippy_with_it"
-#define WLAN_PASS       "bananaphone"
+#define SETUP_AP_NAME                 "Setup Centerpiece"
+#define SETUP_AP_PASSWORD             "setupcenterpiece"
 
 // MQTT
-#define MQTT_SERVER     "172.20.0.1"
-#define MQTT_PORT       1883
-#define MQTT_ROOT       "centerpiece"
+// #define MQTT_SERVER                   "172.20.0.1"
+#define MQTT_SERVER                   "10.0.0.193"
+#define MQTT_PORT                     1883
+#define MQTT_ROOT                     "centerpiece"
 
 // Neopixel
-#define NEOPIXEL_PIN    14
-#define NEOPIXEL_COUNT  5
-// #define DEG_TO_RAD(X) (M_PI*(X)/180)
+#define NEOPIXEL_PIN                  14
+#define NEOPIXEL_COUNT                5
 
 // Buttons
-#define BUTTON_PIN      12
-#define DEBOUNCE_MS     30
-#define HOLD_TIME_MS    3000
+#define BUTTON_PIN                    12
+#define DEBOUNCE_MS                   30
+#define HOLD_TIME_MS                  3000
+
+
+// =-------------------------------------------------------------------------------= Prototypes =--=
+
+void updateDisplay(bool first);
+void setupWifi(bool reset);
 
 
 // =----------------------------------------------------------------------------------= Globals =--=
@@ -55,11 +62,6 @@ long buttonDownTime; // time the button was pressed down
 long buttonUpTime; // time the button was released
 bool ignoreUp = false; // whether to ignore the button release because the click+hold was triggered
 bool hasBoot = false; // Handle a bug where a short press is triggered on boot
-
-
-// =-------------------------------------------------------------------------------= Prototypes =--=
-
-void updateDisplay(bool first);
 
 
 // =--------------------------------------------------------------------------------= Utilities =--=
@@ -115,12 +117,11 @@ uint32_t hsi2rgbw(float H, float S, float I) {
     w = 255 * (1 - S) * I;
   }
 
-  // return strip.Color(neopix_gamma[r], neopix_gamma[g], neopix_gamma[b], neopix_gamma[w]);
   return strip.Color(r, g, b, w);
 }
 
 
-// =---------------------------------------------------------------------------= MQTT Callbacks =--=
+// =-------------------------------------------------------------------------------------= MQTT =--=
 
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message arrived ["); Serial.print(topic); Serial.print("] ");
@@ -320,44 +321,51 @@ void buttonLoop() {
   if (buttonValue == LOW && (millis() - buttonDownTime) > long(HOLD_TIME_MS)) {
     ignoreUp = true;
     buttonDownTime = millis();
-    // setupWifi(true);
-    Serial.println("TODO: Setup Wifi");
+    setupWifi(true);
   }
 
   buttonLastValue = buttonValue;
 }
 
-void setupWifi() {
-  int pixel = 0;
-  int on = true;
-
-  // Connect to WiFi access point.
-  Serial.println(); Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(WLAN_SSID);
-
-  WiFi.begin(WLAN_SSID, WLAN_PASS);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    if (pixel < NEOPIXEL_COUNT) {
-      strip.setPixelColor(pixel++, hsi2rgbw(0, (on ? 1 : 0), LED_INTENSITY));
-      strip.show();
-    } else {
-      on = !on;
-      pixel = 0;
-    }
+// gets called when WiFiManager enters configuration mode
+void configModeCallback (WiFiManager *myWiFiManager) {
+  for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
+    strip.setPixelColor(i, hsi2rgbw(240, 1, LED_INTENSITY));
   }
-  Serial.println();
-
-  randomSeed(micros());
-  Serial.println("WiFi connected");
-  Serial.println("IP address: "); Serial.println(WiFi.localIP());
-
-  Serial.print("Unique ID: "); Serial.println(clientId.c_str());
-
-  strip.setPixelColor(0, hsi2rgbw(60, 1, LED_INTENSITY));
   strip.show();
+
+  Serial.println("Entered config mode...");
+  Serial.println(WiFi.softAPIP());
+
+  // if you used auto generated SSID, print it
+  Serial.println(myWiFiManager->getConfigPortalSSID());
+}
+
+void setupWifi(bool reset = false) {
+  WiFiManager wifiManager;
+
+  // Set callback for when connecting to previous WiFi fails, and enters Access Point mode
+  wifiManager.setAPCallback(configModeCallback);
+
+  // Force a reset to trigger captive AP wifi
+  if (reset) {
+    wifiManager.resetSettings();
+  }
+
+  // Fetches ssid and pass and tries to connect. If it does not connect it starts an access point
+  // with the specified name and goes into a blocking loop awaiting configuration.
+  String setupAPName(String(SETUP_AP_NAME) + " " + clientId);
+  if (!wifiManager.autoConnect(setupAPName.c_str(), SETUP_AP_PASSWORD)) {
+    Serial.println("Failed to connect and hit timeout. Resetting...");
+
+    // Reset and try again, or maybe put it to deep sleep
+    delay(3000);
+    ESP.reset();
+    delay(5000);
+  }
+
+  Serial.print("Connected to WiFi. Local IP: ");
+  Serial.println(WiFi.localIP());
 }
 
 void setupMQTT() {
