@@ -1,9 +1,11 @@
 // =--------------------------------------------------------------------------------= Libraries =--=
 
+#include <FS.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <Adafruit_NeoPixel.h>
 #include <WiFiManager.h>
+#include <ArduinoJson.h>
 #include <math.h>
 
 
@@ -19,10 +21,11 @@
 #define SETUP_AP_PASSWORD             "setupcenterpiece"
 
 // MQTT
-// #define MQTT_SERVER                   "172.20.0.1"
-#define MQTT_SERVER                   "10.0.0.193"
-#define MQTT_PORT                     1883
 #define MQTT_ROOT                     "centerpiece"
+#define DEFAULT_MQTT_SERVER           ""
+#define MQTT_SERVER_LENGTH            40
+#define DEFAULT_MQTT_PORT             "1883"
+#define MQTT_PORT_LENGTH              6
 
 // Neopixel
 #define NEOPIXEL_PIN                  14
@@ -46,9 +49,13 @@ void setupWifi(bool reset);
 int currentProgram = 0;
 
 // WiFi Client
+bool wifiFeaturesEnabled = false;
 WiFiClient wifiClient;
 
 // MQTT
+char mqtt_server[MQTT_SERVER_LENGTH] = DEFAULT_MQTT_SERVER;
+char mqtt_port[MQTT_PORT_LENGTH] = DEFAULT_MQTT_PORT;
+
 PubSubClient mqttClient(wifiClient);
 String clientId(String(ESP.getChipId(), HEX));
 
@@ -62,6 +69,9 @@ long buttonDownTime; // time the button was pressed down
 long buttonUpTime; // time the button was released
 bool ignoreUp = false; // whether to ignore the button release because the click+hold was triggered
 bool hasBoot = false; // Handle a bug where a short press is triggered on boot
+
+// Save data flag for setup config
+bool shouldSaveConfig = false;
 
 
 // =--------------------------------------------------------------------------------= Utilities =--=
@@ -321,7 +331,7 @@ void buttonLoop() {
   if (buttonValue == LOW && (millis() - buttonDownTime) > long(HOLD_TIME_MS)) {
     ignoreUp = true;
     buttonDownTime = millis();
-    setupWifi(true);
+    wifiCaptivePortal();
   }
 
   buttonLastValue = buttonValue;
@@ -341,35 +351,147 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   Serial.println(myWiFiManager->getConfigPortalSSID());
 }
 
-void setupWifi(bool reset = false) {
+void setupFileSystem() {
+  // Clean FS, for testing
+  // SPIFFS.format();
+
+  // Read configuration from FS json
+  Serial.println("Mounting FS...");
+
+  if (SPIFFS.begin()) {
+    Serial.println("Mounted file system");
+    if (SPIFFS.exists("/config.json")) {
+      // file exists, reading and loading
+      Serial.println("Reading config file");
+      File configFile = SPIFFS.open("/config.json", "r");
+      if (configFile) {
+        Serial.println("Opened config file");
+        size_t size = configFile.size();
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[size]);
+
+        configFile.readBytes(buf.get(), size);
+        DynamicJsonBuffer jsonBuffer;
+        JsonObject& json = jsonBuffer.parseObject(buf.get());
+        json.printTo(Serial);
+        if (json.success()) {
+          Serial.println("\nParsed json");
+
+          strcpy(mqtt_server, json["mqtt_server"]);
+          strcpy(mqtt_port, json["mqtt_port"]);
+        } else {
+          Serial.println("Failed to load json config");
+        }
+      }
+    }
+  } else {
+    Serial.println("Failed to mount FS");
+  }
+  // end read
+}
+
+// Callback notifying us of the need to save config
+void saveConfigCallback() {
+  Serial.println("Should save config");
+  shouldSaveConfig = true;
+}
+
+void finalizeWifi() {
+  if (WiFi.status() != WL_CONNECTED){
+    wifiFeaturesEnabled = false;
+    Serial.print("Failed to connect to wifi. Playing failure animation then proceeding.");
+
+    for (size_t j = 0; j < 6; j++) {
+      uint32_t color = hsi2rgbw(j % 2 ? 0 : 240, 1, LED_INTENSITY);
+      for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
+      strip.show();
+      delay(250);
+    }
+  } else{
+    wifiFeaturesEnabled = true;
+    Serial.print("Connected to WiFi. Local IP: ");
+    Serial.println(WiFi.localIP());
+  }
+}
+
+void wifiCaptivePortal() {
+  // The extra parameters to be configured (can be either global or just in the setup). After
+  // connecting, parameter.getValue() will get you the configured value:
+  // id/name, placeholder/prompt, default, length
+  WiFiManagerParameter config_mqtt_server("server", "MQTT Server", mqtt_server, MQTT_SERVER_LENGTH);
+  WiFiManagerParameter config_mqtt_port("port", "MQTT Port", mqtt_port, MQTT_PORT_LENGTH);
   WiFiManager wifiManager;
 
   // Set callback for when connecting to previous WiFi fails, and enters Access Point mode
   wifiManager.setAPCallback(configModeCallback);
 
-  // Force a reset to trigger captive AP wifi
-  if (reset) {
-    wifiManager.resetSettings();
-  }
+  // Set config save notify callback
+  wifiManager.setSaveConfigCallback(saveConfigCallback);
 
-  // Fetches ssid and pass and tries to connect. If it does not connect it starts an access point
-  // with the specified name and goes into a blocking loop awaiting configuration.
+  // Add all your parameters here
+  wifiManager.addParameter(&config_mqtt_server);
+  wifiManager.addParameter(&config_mqtt_port);
+
+  // Fire up the captive portal
   String setupAPName(String(SETUP_AP_NAME) + " " + clientId);
-  if (!wifiManager.autoConnect(setupAPName.c_str(), SETUP_AP_PASSWORD)) {
+  if (!wifiManager.startConfigPortal(setupAPName.c_str(), SETUP_AP_PASSWORD)) {
     Serial.println("Failed to connect and hit timeout. Resetting...");
 
-    // Reset and try again, or maybe put it to deep sleep
+    // Reset and reboot. User can try again by holding button
     delay(3000);
     ESP.reset();
     delay(5000);
   }
 
-  Serial.print("Connected to WiFi. Local IP: ");
-  Serial.println(WiFi.localIP());
+  // Maybe save the custom parameters to FS
+  if (shouldSaveConfig) {
+    // Read updated parameters
+    strcpy(mqtt_server, config_mqtt_server.getValue());
+    strcpy(mqtt_port, config_mqtt_port.getValue());
+
+    Serial.println("Saving config");
+    DynamicJsonBuffer jsonBuffer;
+    JsonObject& json = jsonBuffer.createObject();
+    json["mqtt_server"] = mqtt_server;
+    json["mqtt_port"] = mqtt_port;
+
+    File configFile = SPIFFS.open("/config.json", "w");
+    if (!configFile) {
+      Serial.println("Failed to open config file for writing");
+    }
+
+    json.printTo(Serial);
+    json.printTo(configFile);
+    configFile.close();
+  }
+
+  finalizeWifi();
+}
+
+void setupWifi() {
+  if (WiFi.SSID() == "") {
+    Serial.println("We haven't got any access point credentials, so get them now");
+    wifiCaptivePortal();
+  } else {
+    // Force to station mode because if device was switched off while in access point mode it will
+    // start up next time in access point mode.
+    WiFi.mode(WIFI_STA);
+
+    unsigned long startedAt = millis();
+    Serial.print("After waiting ");
+    int connRes = WiFi.waitForConnectResult();
+    float waited = (millis() - startedAt);
+    Serial.print(waited / 1000);
+    Serial.print(" secs in setup() connection result is ");
+    Serial.println(connRes);
+  }
+
+  finalizeWifi();
 }
 
 void setupMQTT() {
-  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
+  int port = atoi(mqtt_port);
+  mqttClient.setServer(mqtt_server, port);
   mqttClient.setCallback(callback);
 }
 
@@ -392,14 +514,24 @@ void setup() {
   ESP.wdtEnable(WDTO_8S);
 
   // Setup :allthethings:
+  setupFileSystem();
   setupButton();
   setupNeopixels();
   setupWifi();
-  setupMQTT();
+
+  if (wifiFeaturesEnabled) {
+    setupMQTT();
+  }
 }
 
 void loop() {
-  if (!mqttClient.connected()) { mqttConnect(); }
+  if (shouldSaveConfig) {
+    // Config was rewritten, be sure to rerun setup that uses it
+    setupMQTT();
+    shouldSaveConfig = false;
+  }
+  if (wifiFeaturesEnabled && !mqttClient.connected()) { mqttConnect(); }
+
   mqttClient.loop();
   buttonLoop();
   updateDisplay();
