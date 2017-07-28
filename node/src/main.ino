@@ -12,7 +12,6 @@
 // =----------------------------------------------------------------------------= Configuration =--=
 
 // Programs
-#define PROGRAM_COUNT                 6
 #define FRAME_DELAY_MS                33  // 30 fps
 #define LED_INTENSITY                 0.5 // 50% power
 
@@ -39,18 +38,41 @@
 
 // =-------------------------------------------------------------------------------= Prototypes =--=
 
-void updateDisplay(bool first);
-void setupWifi(bool reset);
+void setupWifi(bool);
+void updateDisplay(bool);
+void runProgramWhite(bool);
+void runProgramCandle(bool);
+void runProgramRainbow(bool);
+void runProgramTwinkle(bool);
+void runProgramNight(bool);
+void runProgramDance(bool);
 
 
 // =----------------------------------------------------------------------------------= Globals =--=
 
 // Programs
 int currentProgram = 0;
+void (*renderFunc[])(bool) {
+  runProgramWhite,
+  runProgramCandle,
+  runProgramRainbow,
+  runProgramTwinkle,
+  runProgramNight,
+  runProgramDance
+};
+#define PROGRAM_COUNT (sizeof(renderFunc) / sizeof(renderFunc[0]))
+const char *programNames[] = {
+  "white",
+  "candle",
+  "rainbow",
+  "twinkle",
+  "night",
+  "dance"
+};
 
 // WiFi Client
-bool wifiFeaturesEnabled = false;
 WiFiClient wifiClient;
+bool wifiFeaturesEnabled = false;
 
 // MQTT
 char mqtt_server[MQTT_SERVER_LENGTH] = DEFAULT_MQTT_SERVER;
@@ -150,34 +172,25 @@ void sendIdentity() {
   mqttClient.publish(makeTopic("identity").c_str(), "online");
 }
 
-void setProgram(String programName) {
-  int program = -1;
-
-  if (programName.equals("white")) { program = 0; }
-  else if (programName.equals("candle")) { program = 1; }
-  else if (programName.equals("rainbow")) { program = 2; }
-  else if (programName.equals("twinkle")) { program = 3; }
-  else if (programName.equals("night")) { program = 4; }
-  else if (programName.equals("dance")) { program = 5; }
-
-  if (program >= 0 && program != currentProgram) {
+void setProgram(int program) {
+  if (program >= 0 && program < PROGRAM_COUNT && program != currentProgram) {
     currentProgram = program;
-    Serial.print("Setting program to "); Serial.println(programName);
+    Serial.print("Setting program to "); Serial.println(programNames[program]);
     updateDisplay(true);
   }
 }
 
-void nextProgram() {
-  String program;
-  switch((currentProgram + 1) % PROGRAM_COUNT) {
-    case 0: program = "white"; break;
-    case 1: program = "candle"; break;
-    case 2: program = "rainbow"; break;
-    case 3: program = "twinkle"; break;
-    case 4: program = "night"; break;
-    case 5: program = "dance"; break;
+void setProgram(String programName) {
+  for (size_t program = 0; program < PROGRAM_COUNT; program++) {
+    if (programName.equals(programNames[program])) {
+      setProgram(program);
+      break;
+    }
   }
-  setProgram(program);
+}
+
+void nextProgram() {
+  setProgram((currentProgram + 1) % PROGRAM_COUNT); // Next with loop around
 }
 
 // Function to connect and reconnect as necessary to the MQTT server.
@@ -228,8 +241,14 @@ void runProgramWhite(bool first) {
 }
 
 void runProgramCandle(bool first) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(60, 0.5, LED_INTENSITY)); }
-  strip.show();
+  static unsigned long updateTimer = millis();
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  if (first || updateTimeDiff > FRAME_DELAY_MS) {
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(60, 0.5, LED_INTENSITY)); }
+    strip.show();
+    updateTimer = millis();
+  }
 }
 
 void runProgramRainbow(bool first) {
@@ -242,19 +261,31 @@ void runProgramRainbow(bool first) {
       strip.setPixelColor(i, hsi2rgbw(hueOffset, 1, LED_INTENSITY));
     }
     strip.show();
-    hueOffset = floatmod(360 + hueOffset - 0.25, 360);
+    hueOffset = floatmod(360 + hueOffset - 0.5, 360);
     updateTimer = millis();
   }
 }
 
 void runProgramTwinkle(bool first) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(200, 1, LED_INTENSITY)); }
-  strip.show();
+  static unsigned long updateTimer = millis();
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  if (first || updateTimeDiff > FRAME_DELAY_MS) {
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(200, 1, LED_INTENSITY)); }
+    strip.show();
+    updateTimer = millis();
+  }
 }
 
 void runProgramNight(bool first) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(250, 1, LED_INTENSITY)); }
-  strip.show();
+  static unsigned long updateTimer = millis();
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  if (first || updateTimeDiff > FRAME_DELAY_MS) {
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(250, 1, LED_INTENSITY)); }
+    strip.show();
+    updateTimer = millis();
+  }
 }
 
 void runProgramDance(bool first) {
@@ -294,14 +325,7 @@ void runProgramDance(bool first) {
 // =---------------------------------------------------------------------------= Setup and Loop =--=
 
 void updateDisplay(bool first = false) {
-  switch(currentProgram) {
-    case 0: runProgramWhite(first); break;
-    case 1: runProgramCandle(first); break;
-    case 2: runProgramRainbow(first); break;
-    case 3: runProgramTwinkle(first); break;
-    case 4: runProgramNight(first); break;
-    case 5: runProgramDance(first); break;
-  }
+  (*renderFunc[currentProgram])(first);
 }
 
 void buttonLoop() {
