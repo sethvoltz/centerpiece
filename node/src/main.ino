@@ -40,7 +40,6 @@
 
 // =-------------------------------------------------------------------------------= Prototypes =--=
 
-void setupWifi(bool);
 void displayLoop(bool);
 void runProgramWhite(bool);
 void runProgramCandle(bool);
@@ -164,6 +163,12 @@ uint32_t hsi2rgbw(float H, float S, float I) {
 
 // =-------------------------------------------------------------------------------------= MQTT =--=
 
+void setupMQTT() {
+  int port = atoi(mqtt_port);
+  mqttClient.setServer(mqtt_server, port);
+  mqttClient.setCallback(callback);
+}
+
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message arrived ["); Serial.print(topic); Serial.print("] ");
   payload[length] = 0;
@@ -179,27 +184,6 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 void sendIdentity() {
   mqttClient.publish(makeTopic("identity").c_str(), "online");
-}
-
-void setProgram(int program) {
-  if (program >= 0 && program < PROGRAM_COUNT && program != currentProgram) {
-    currentProgram = program;
-    Serial.print("Setting program to "); Serial.println(programNames[program]);
-    displayLoop(true);
-  }
-}
-
-void setProgram(String programName) {
-  for (size_t program = 0; program < PROGRAM_COUNT; program++) {
-    if (programName.equals(programNames[program])) {
-      setProgram(program);
-      break;
-    }
-  }
-}
-
-void nextProgram() {
-  setProgram((currentProgram + 1) % PROGRAM_COUNT); // Next with loop around
 }
 
 // Function to connect and reconnect as necessary to the MQTT server.
@@ -236,6 +220,39 @@ void mqttConnect() {
 }
 
 
+// =----------------------------------------------------------------------------------= Display =--=
+
+void setupNeopixels() {
+  strip.begin();
+  strip.show();
+}
+
+void setProgram(int program) {
+  if (program >= 0 && program < PROGRAM_COUNT && program != currentProgram) {
+    currentProgram = program;
+    Serial.print("Setting program to "); Serial.println(programNames[program]);
+    displayLoop(true);
+  }
+}
+
+void setProgram(String programName) {
+  for (size_t program = 0; program < PROGRAM_COUNT; program++) {
+    if (programName.equals(programNames[program])) {
+      setProgram(program);
+      break;
+    }
+  }
+}
+
+void nextProgram() {
+  setProgram((currentProgram + 1) % PROGRAM_COUNT); // Next with loop around
+}
+
+void displayLoop(bool first = false) {
+  (*renderFunc[currentProgram])(first);
+}
+
+
 // =---------------------------------------------------------------------------------= Programs =--=
 
 // Program: White
@@ -245,9 +262,8 @@ void runProgramWhite(bool first) {
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
-      strip.setPixelColor(i, hsi2rgbw(0, 0, LED_INTENSITY));
-    }
+    uint32_t color = hsi2rgbw(0, 0, LED_INTENSITY);
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
     strip.show();
     updateTimer = millis();
   }
@@ -260,7 +276,8 @@ void runProgramCandle(bool first) {
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(60, 0.5, LED_INTENSITY)); }
+    uint32_t color = hsi2rgbw(60, 0.5, LED_INTENSITY);
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
     strip.show();
     updateTimer = millis();
   }
@@ -275,14 +292,13 @@ void runProgramRainbow(bool first) {
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
-      strip.setPixelColor(i, hsi2rgbw(hueOffset, 1, LED_INTENSITY));
-    }
+    uint32_t color = hsi2rgbw(hueOffset, 1, LED_INTENSITY);
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
     strip.show();
 
     // 100 bpm / 60 sec = 1.6667 bps. 30 fps / 1.667 bps = 18 frames per beat
     // Assume 4 count, so 360 deg / 72 frames = 5 deg per frame
-    float degPerFrame = 360 / (BEAT_COUNT * DISPLAY_FPS / currentBPS)
+    float degPerFrame = 360 / (BEAT_COUNT * DISPLAY_FPS / currentBPS);
     hueOffset = floatmod(360 + hueOffset - degPerFrame, 360);
     updateTimer = millis();
   }
@@ -295,7 +311,8 @@ void runProgramTwinkle(bool first) {
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(200, 1, LED_INTENSITY)); }
+    uint32_t color = hsi2rgbw(200, 1, LED_INTENSITY);
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
     strip.show();
     updateTimer = millis();
   }
@@ -308,7 +325,8 @@ void runProgramNight(bool first) {
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(250, 1, LED_INTENSITY)); }
+    uint32_t color = hsi2rgbw(250, 1, LED_INTENSITY);
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
     strip.show();
     updateTimer = millis();
   }
@@ -337,9 +355,8 @@ void runProgramDance(bool first) {
     float offset = (danceTarget - danceCurrent) / framesPerFade;
     float hue = danceCurrent + (offset * danceOffset);
 
-    for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
-      strip.setPixelColor(i, hsi2rgbw(hue, 1, LED_INTENSITY));
-    }
+    uint32_t color = hsi2rgbw(hue, 1, LED_INTENSITY);
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
     strip.show();
 
     danceOffset++;
@@ -355,10 +372,11 @@ void runProgramDance(bool first) {
 }
 
 
-// =---------------------------------------------------------------------------= Setup and Loop =--=
+// =----------------------------------------------------------------------------------= Buttons =--=
 
-void displayLoop(bool first = false) {
-  (*renderFunc[currentProgram])(first);
+void setupButton() {
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  digitalWrite(BUTTON_PIN, HIGH);
 }
 
 void buttonLoop() {
@@ -394,6 +412,9 @@ void buttonLoop() {
   buttonLastValue = buttonValue;
 }
 
+
+// =-------------------------------------------------------------------------------------= WIFI =--=
+
 // gets called when WiFiManager enters configuration mode
 void configModeCallback (WiFiManager *myWiFiManager) {
   for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
@@ -406,45 +427,6 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 
   // if you used auto generated SSID, print it
   Serial.println(myWiFiManager->getConfigPortalSSID());
-}
-
-void setupFileSystem() {
-  // Clean FS, for testing
-  // SPIFFS.format();
-
-  // Read configuration from FS json
-  Serial.println("Mounting FS...");
-
-  if (SPIFFS.begin()) {
-    Serial.println("Mounted file system");
-    if (SPIFFS.exists("/config.json")) {
-      // file exists, reading and loading
-      Serial.println("Reading config file");
-      File configFile = SPIFFS.open("/config.json", "r");
-      if (configFile) {
-        Serial.println("Opened config file");
-        size_t size = configFile.size();
-        // Allocate a buffer to store contents of the file.
-        std::unique_ptr<char[]> buf(new char[size]);
-
-        configFile.readBytes(buf.get(), size);
-        DynamicJsonBuffer jsonBuffer;
-        JsonObject& json = jsonBuffer.parseObject(buf.get());
-        json.printTo(Serial);
-        if (json.success()) {
-          Serial.println("\nParsed json");
-
-          strcpy(mqtt_server, json["mqtt_server"]);
-          strcpy(mqtt_port, json["mqtt_port"]);
-        } else {
-          Serial.println("Failed to load json config");
-        }
-      }
-    }
-  } else {
-    Serial.println("Failed to mount FS");
-  }
-  // end read
 }
 
 // Callback notifying us of the need to save config
@@ -546,21 +528,50 @@ void setupWifi() {
   finalizeWifi();
 }
 
-void setupMQTT() {
-  int port = atoi(mqtt_port);
-  mqttClient.setServer(mqtt_server, port);
-  mqttClient.setCallback(callback);
+
+// =------------------------------------------------------------------------------= File System =--=
+
+void setupFileSystem() {
+  // Clean FS, for testing
+  // SPIFFS.format();
+
+  // Read configuration from FS json
+  Serial.println("Mounting FS...");
+
+  if (SPIFFS.begin()) {
+    Serial.println("Mounted file system");
+    if (SPIFFS.exists("/config.json")) {
+      // file exists, reading and loading
+      Serial.println("Reading config file");
+      File configFile = SPIFFS.open("/config.json", "r");
+      if (configFile) {
+        Serial.println("Opened config file");
+        size_t size = configFile.size();
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[size]);
+
+        configFile.readBytes(buf.get(), size);
+        DynamicJsonBuffer jsonBuffer;
+        JsonObject& json = jsonBuffer.parseObject(buf.get());
+        json.printTo(Serial);
+
+        if (json.success()) {
+          Serial.println("\nParsed json");
+
+          strcpy(mqtt_server, json["mqtt_server"]);
+          strcpy(mqtt_port, json["mqtt_port"]);
+        } else {
+          Serial.println("Failed to load json config");
+        }
+      }
+    }
+  } else {
+    Serial.println("Failed to mount FS");
+  }
 }
 
-void setupNeopixels() {
-  strip.begin();
-  strip.show();
-}
 
-void setupButton() {
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-  digitalWrite(BUTTON_PIN, HIGH);
-}
+// =---------------------------------------------------------------------------= Setup and Loop =--=
 
 void setup() {
   Serial.begin(115200);
@@ -571,9 +582,9 @@ void setup() {
   ESP.wdtEnable(WDTO_8S);
 
   // Setup :allthethings:
+  setupNeopixels();
   setupFileSystem();
   setupButton();
-  setupNeopixels();
   setupWifi();
 
   if (wifiFeaturesEnabled) {
