@@ -12,8 +12,10 @@
 // =----------------------------------------------------------------------------= Configuration =--=
 
 // Programs
-#define FRAME_DELAY_MS                33  // 30 fps
-#define LED_INTENSITY                 0.5 // 50% power
+#define DISPLAY_FPS                   30
+#define FRAME_DELAY_MS                1000 / DISPLAY_FPS
+#define LED_INTENSITY                 0.5 // 0-1.0 - 50% power
+#define BEAT_COUNT                    4 // Number of beats per cycle or sequence
 
 // Wifi
 #define SETUP_AP_NAME                 "Setup Centerpiece"
@@ -39,7 +41,7 @@
 // =-------------------------------------------------------------------------------= Prototypes =--=
 
 void setupWifi(bool);
-void updateDisplay(bool);
+void displayLoop(bool);
 void runProgramWhite(bool);
 void runProgramCandle(bool);
 void runProgramRainbow(bool);
@@ -51,6 +53,8 @@ void runProgramDance(bool);
 // =----------------------------------------------------------------------------------= Globals =--=
 
 // Programs
+// Define all the programs in the correct order here.
+// The first program will be the default.
 int currentProgram = 0;
 void (*renderFunc[])(bool) {
   runProgramWhite,
@@ -61,6 +65,8 @@ void (*renderFunc[])(bool) {
   runProgramDance
 };
 #define PROGRAM_COUNT (sizeof(renderFunc) / sizeof(renderFunc[0]))
+
+// Define the string name mappings for each program here for MQTT translation.
 const char *programNames[] = {
   "white",
   "candle",
@@ -85,15 +91,18 @@ String clientId(String(ESP.getChipId(), HEX));
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRBW + NEO_KHZ800);
 
 // Buttons
-int buttonValue = 0; // value read from button
-int buttonLastValue = 0; // buffered value of the button's previous state
-long buttonDownTime; // time the button was pressed down
-long buttonUpTime; // time the button was released
-bool ignoreUp = false; // whether to ignore the button release because the click+hold was triggered
-bool hasBoot = false; // Handle a bug where a short press is triggered on boot
+int buttonValue = 0;     // Value read from button
+int buttonLastValue = 0; // Buffered value of the button's previous state
+long buttonDownTime;     // Time the button was pressed
+long buttonUpTime;       // Time the button was released
+bool ignoreUp = false;   // Whether to ignore the button release because click+hold was triggered
+bool hasBoot = false;    // Handle a bug where a short press is triggered on boot
 
 // Save data flag for setup config
 bool shouldSaveConfig = false;
+
+// Current Tempo
+float currentBPS = 1; // Calculate BPM / 60 on save, instead of in each display loop
 
 
 // =--------------------------------------------------------------------------------= Utilities =--=
@@ -176,7 +185,7 @@ void setProgram(int program) {
   if (program >= 0 && program < PROGRAM_COUNT && program != currentProgram) {
     currentProgram = program;
     Serial.print("Setting program to "); Serial.println(programNames[program]);
-    updateDisplay(true);
+    displayLoop(true);
   }
 }
 
@@ -229,17 +238,23 @@ void mqttConnect() {
 
 // =---------------------------------------------------------------------------------= Programs =--=
 
+// Program: White
+// Steady pure white light for ambient lighting
 void runProgramWhite(bool first) {
   static unsigned long updateTimer = millis();
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, hsi2rgbw(0, 0, LED_INTENSITY)); }
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
+      strip.setPixelColor(i, hsi2rgbw(0, 0, LED_INTENSITY));
+    }
     strip.show();
     updateTimer = millis();
   }
 }
 
+// Program: Candle Flicker
+// Random flicker of brightness and duration, maybe tint
 void runProgramCandle(bool first) {
   static unsigned long updateTimer = millis();
 
@@ -251,6 +266,9 @@ void runProgramCandle(bool first) {
   }
 }
 
+// Program: Rainbow Fade
+// Cycle through the color wheel at full saturation
+// Uses global rate value to control duration
 void runProgramRainbow(bool first) {
   static unsigned long updateTimer = millis();
   static float hueOffset = 0.0;
@@ -261,11 +279,17 @@ void runProgramRainbow(bool first) {
       strip.setPixelColor(i, hsi2rgbw(hueOffset, 1, LED_INTENSITY));
     }
     strip.show();
-    hueOffset = floatmod(360 + hueOffset - 0.5, 360);
+
+    // 100 bpm / 60 sec = 1.6667 bps. 30 fps / 1.667 bps = 18 frames per beat
+    // Assume 4 count, so 360 deg / 72 frames = 5 deg per frame
+    float degPerFrame = 360 / (BEAT_COUNT * DISPLAY_FPS / currentBPS)
+    hueOffset = floatmod(360 + hueOffset - degPerFrame, 360);
     updateTimer = millis();
   }
 }
 
+// Program: Twinkle
+// Light blue and white strobes randomly spaced
 void runProgramTwinkle(bool first) {
   static unsigned long updateTimer = millis();
 
@@ -277,6 +301,8 @@ void runProgramTwinkle(bool first) {
   }
 }
 
+// Program: Night Sky
+// Shades of blue and purple rolling fade, twinkle strobes
 void runProgramNight(bool first) {
   static unsigned long updateTimer = millis();
 
@@ -288,6 +314,9 @@ void runProgramNight(bool first) {
   }
 }
 
+// Program: Dance Mode
+// Fade between random colors
+// Uses global rate value to control duration
 void runProgramDance(bool first) {
   static unsigned long updateTimer = millis();
   static float danceOffset = 0.0;
@@ -302,7 +331,10 @@ void runProgramDance(bool first) {
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    float offset = (danceTarget - danceCurrent) / 50;
+    // 100 bpm / 60 sec = 1.6667 bps. 30 fps / 1.667 bps = 18 frames per beat
+    // Assume a 4 count for most music and fade over 4 beats? At 100 bpm, that's 72 frames
+    int framesPerFade = DISPLAY_FPS / currentBPS * BEAT_COUNT;
+    float offset = (danceTarget - danceCurrent) / framesPerFade;
     float hue = danceCurrent + (offset * danceOffset);
 
     for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
@@ -311,7 +343,8 @@ void runProgramDance(bool first) {
     strip.show();
 
     danceOffset++;
-    if (danceOffset > 50) {
+    // TODO: Also this is frame count for complete
+    if (danceOffset > framesPerFade) {
       danceCurrent = danceTarget; // copy
       danceTarget = random(360); // init
       danceOffset = 0;
@@ -324,7 +357,7 @@ void runProgramDance(bool first) {
 
 // =---------------------------------------------------------------------------= Setup and Loop =--=
 
-void updateDisplay(bool first = false) {
+void displayLoop(bool first = false) {
   (*renderFunc[currentProgram])(first);
 }
 
@@ -558,5 +591,5 @@ void loop() {
 
   mqttClient.loop();
   buttonLoop();
-  updateDisplay();
+  displayLoop();
 }
