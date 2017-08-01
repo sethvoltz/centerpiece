@@ -225,7 +225,7 @@ void mqttConnect() {
 
         // Reset number of attempts and enable the display
         connectionAttempts = 0;
-        shouldRunDisplay = true;
+        enableDisplay();
       } else {
         Serial.printf(
           "failed to connect to MQTT server: rc=%d, trying again in %d seconds\n",
@@ -241,12 +241,12 @@ void mqttConnect() {
               MAX_CONNECTION_ATTEMPTS
             );
           }
-          shouldRunDisplay = true;
+          enableDisplay();
         } else {
           if (shouldRunDisplay) {
             Serial.println("Initial attempt to connect to MQTT server, disabling display.");
           }
-          shouldRunDisplay = false;
+          disableDisplay();
         }
       }
       connectTimer = millis();
@@ -269,6 +269,16 @@ void mqttConnect() {
 void setupNeopixels() {
   strip.begin();
   strip.show();
+}
+
+void enableDisplay() {
+  shouldRunDisplay = true;
+}
+
+void disableDisplay() {
+  shouldRunDisplay = false;
+  uint32_t color = hsi2rgbw(0, 0, 0);
+  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
 }
 
 void setBPM(String bpm) {
