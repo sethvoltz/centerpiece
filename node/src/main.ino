@@ -25,6 +25,7 @@
 #define MAX_CONNECTION_ATTEMPTS       5 // Number of attempts before enabling display
 #define SHORT_CONNECTION_DELAY        5000 // Delay between initial connection attempts
 #define LONG_CONNECTION_DELAY         60000 // Delay between attempts after max attempts
+#define CONNECTING_BLINK_DELAY        500
 #define MQTT_ROOT                     "centerpiece"
 #define DEFAULT_MQTT_SERVER           ""
 #define MQTT_SERVER_LENGTH            40
@@ -218,8 +219,9 @@ void mqttConnect() {
         mqttClient.subscribe(makeTopic("program").c_str());
         mqttClient.subscribe(makeTopic("program", true).c_str());
 
-        // Reset number of attempts
+        // Reset number of attempts and enable the display
         connectionAttempts = 0;
+        shouldRunDisplay = true;
       } else {
         Serial.printf(
           "failed to connect to MQTT server: rc=%d, trying again in %d seconds\n",
@@ -247,7 +249,7 @@ void mqttConnect() {
     }
 
     // While connecting, blink the light. Don't blink if the display is active
-    if (!shouldRunDisplay && updateTimeDiff > 1000) {
+    if (!shouldRunDisplay && updateTimeDiff > CONNECTING_BLINK_DELAY) {
       ledOn = !ledOn;
       strip.setPixelColor(1, hsi2rgbw(120, 1, ledOn ? LED_INTENSITY : 0));
       strip.show();
