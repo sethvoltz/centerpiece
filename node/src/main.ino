@@ -526,7 +526,7 @@ void wifiCaptivePortal() {
     strcpy(mqtt_server, config_mqtt_server.getValue());
     strcpy(mqtt_port, config_mqtt_port.getValue());
 
-    Serial.println("Saving config");
+    Serial.println("Saving config...");
     DynamicJsonBuffer jsonBuffer;
     JsonObject& json = jsonBuffer.createObject();
     json["mqtt_server"] = mqtt_server;
@@ -539,6 +539,7 @@ void wifiCaptivePortal() {
 
     json.printTo(Serial);
     json.printTo(configFile);
+    Serial.println("");
     configFile.close();
   }
 
