@@ -212,6 +212,7 @@ void mqttConnect() {
     if (connectTimeDiff > connectionDelay) {
       Serial.print("Attempting MQTT connection... ");
 
+      // TODO: Make this connect more async -- the 2-3 second delay blocks animation
       if (mqttClient.connect(clientId.c_str())) {
         Serial.println("connected");
         sendIdentity();
@@ -420,7 +421,6 @@ void runProgramDance(bool first) {
     strip.show();
 
     danceOffset++;
-    // TODO: Also this is frame count for complete
     if (danceOffset > framesPerFade) {
       danceCurrent = danceTarget; // copy
       danceTarget = random(360); // init
