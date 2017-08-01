@@ -15,7 +15,7 @@
 #define DISPLAY_FPS                   30
 #define FRAME_DELAY_MS                1000 / DISPLAY_FPS
 #define LED_INTENSITY                 0.5 // 0-1.0 - 50% power
-#define BEAT_COUNT                    4 // Number of beats per cycle or sequence
+#define BEAT_MULTIPLIER               2 // Number of beats per cycle or sequence
 
 // Wifi
 #define SETUP_AP_NAME                 "Setup Centerpiece"
@@ -186,6 +186,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
     sendIdentity();
   } else if (topicMatch(topic, "program")) {
     setProgram(message);
+  } else if (topicMatch(topic, "bpm")) {
+    setBPM(message);
   }
 }
 
@@ -218,6 +220,8 @@ void mqttConnect() {
         mqttClient.subscribe(makeTopic("identify", true).c_str());
         mqttClient.subscribe(makeTopic("program").c_str());
         mqttClient.subscribe(makeTopic("program", true).c_str());
+        mqttClient.subscribe(makeTopic("bpm").c_str());
+        mqttClient.subscribe(makeTopic("bpm", true).c_str());
 
         // Reset number of attempts and enable the display
         connectionAttempts = 0;
@@ -267,10 +271,16 @@ void setupNeopixels() {
   strip.show();
 }
 
+void setBPM(String bpm) {
+  // Convert Beats per Minute to Beats per Second as a 1-time calculation on save
+  currentBPS = atoi(bpm.c_str()) / 60;
+  Serial.printf("Setting current BPM to %s\n", bpm.c_str());
+}
+
 void setProgram(int program) {
   if (program >= 0 && program < PROGRAM_COUNT && program != currentProgram) {
     currentProgram = program;
-    Serial.print("Setting program to "); Serial.println(programNames[program]);
+    Serial.printf("Setting program to %s\n", programNames[program]);
     displayLoop(true);
   }
 }
@@ -338,7 +348,7 @@ void runProgramRainbow(bool first) {
 
     // 100 bpm / 60 sec = 1.6667 bps. 30 fps / 1.667 bps = 18 frames per beat
     // Assume 4 count, so 360 deg / 72 frames = 5 deg per frame
-    float degPerFrame = 360 / (BEAT_COUNT * DISPLAY_FPS / currentBPS);
+    float degPerFrame = 360 / (BEAT_MULTIPLIER * DISPLAY_FPS / currentBPS);
     hueOffset = floatmod(360 + hueOffset - degPerFrame, 360);
     updateTimer = millis();
   }
@@ -391,7 +401,7 @@ void runProgramDance(bool first) {
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
     // 100 bpm / 60 sec = 1.6667 bps. 30 fps / 1.667 bps = 18 frames per beat
     // Assume a 4 count for most music and fade over 4 beats? At 100 bpm, that's 72 frames
-    int framesPerFade = DISPLAY_FPS / currentBPS * BEAT_COUNT;
+    int framesPerFade = DISPLAY_FPS / currentBPS * BEAT_MULTIPLIER;
     float offset = (danceTarget - danceCurrent) / framesPerFade;
     float hue = danceCurrent + (offset * danceOffset);
 
