@@ -22,6 +22,9 @@
 #define SETUP_AP_PASSWORD             "setupcenterpiece"
 
 // MQTT
+#define MAX_CONNECTION_ATTEMPTS       5 // Number of attempts before enabling display
+#define SHORT_CONNECTION_DELAY        5000 // Delay between initial connection attempts
+#define LONG_CONNECTION_DELAY         60000 // Delay between attempts after max attempts
 #define MQTT_ROOT                     "centerpiece"
 #define DEFAULT_MQTT_SERVER           ""
 #define MQTT_SERVER_LENGTH            40
@@ -82,11 +85,13 @@ bool wifiFeaturesEnabled = false;
 // MQTT
 char mqtt_server[MQTT_SERVER_LENGTH] = DEFAULT_MQTT_SERVER;
 char mqtt_port[MQTT_PORT_LENGTH] = DEFAULT_MQTT_PORT;
+int connectionAttempts = 0;
 
 PubSubClient mqttClient(wifiClient);
 String clientId(String(ESP.getChipId(), HEX));
 
 // Neopixel
+bool shouldRunDisplay = false;
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRBW + NEO_KHZ800);
 
 // Buttons
@@ -167,6 +172,7 @@ void setupMQTT() {
   int port = atoi(mqtt_port);
   mqttClient.setServer(mqtt_server, port);
   mqttClient.setCallback(callback);
+  connectionAttempts = 0;
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -189,32 +195,64 @@ void sendIdentity() {
 // Function to connect and reconnect as necessary to the MQTT server.
 // Should be called in the loop function and it will take care if connecting.
 void mqttConnect() {
-  // Loop until we're reconnected
-  while (!mqttClient.connected()) {
-    strip.setPixelColor(1, hsi2rgbw(60, 1, LED_INTENSITY));
-    strip.show();
+  static unsigned long connectTimer = millis();
+  static unsigned long updateTimer = millis();
+  static bool ledOn = false;
 
-    Serial.print("Attempting MQTT connection... ");
+  unsigned long connectTimeDiff = millis() - connectTimer;
+  unsigned long updateTimeDiff = millis() - updateTimer;
 
-    // Attempt to connect
-    if (mqttClient.connect(clientId.c_str())) {
-      strip.setPixelColor(1, hsi2rgbw(120, 1, LED_INTENSITY));
+  if (!mqttClient.connected()) {
+    // While not connected, try every few seconds
+    bool hasExceededMaxAttempts = connectionAttempts > MAX_CONNECTION_ATTEMPTS;
+    int connectionDelay = hasExceededMaxAttempts ? LONG_CONNECTION_DELAY : SHORT_CONNECTION_DELAY;
+    if (connectTimeDiff > connectionDelay) {
+      Serial.print("Attempting MQTT connection... ");
+
+      if (mqttClient.connect(clientId.c_str())) {
+        Serial.println("connected");
+        sendIdentity();
+
+        // Subscribe to topics
+        mqttClient.subscribe(makeTopic("identify", true).c_str());
+        mqttClient.subscribe(makeTopic("program").c_str());
+        mqttClient.subscribe(makeTopic("program", true).c_str());
+
+        // Reset number of attempts
+        connectionAttempts = 0;
+      } else {
+        Serial.printf(
+          "failed to connect to MQTT server: rc=%d, trying again in %d seconds\n",
+          mqttClient.state(),
+          connectionDelay / 1000
+        );
+
+        // Enable the display if the connection attempts exceed the max allowed
+        if (++connectionAttempts > MAX_CONNECTION_ATTEMPTS) {
+          if (!shouldRunDisplay) {
+            Serial.printf(
+              "Unable to connect to MQTT server in %d attempts. Enabling display and slowing requests.\n",
+              MAX_CONNECTION_ATTEMPTS
+            );
+          }
+          shouldRunDisplay = true;
+        } else {
+          if (shouldRunDisplay) {
+            Serial.println("Initial attempt to connect to MQTT server, disabling display.");
+          }
+          shouldRunDisplay = false;
+        }
+      }
+      connectTimer = millis();
+    }
+
+    // While connecting, blink the light. Don't blink if the display is active
+    if (!shouldRunDisplay && updateTimeDiff > 1000) {
+      ledOn = !ledOn;
+      strip.setPixelColor(1, hsi2rgbw(120, 1, ledOn ? LED_INTENSITY : 0));
       strip.show();
 
-      Serial.println("connected");
-      sendIdentity();
-
-      // Subscribe to topics
-      mqttClient.subscribe(makeTopic("identify", true).c_str());
-      mqttClient.subscribe(makeTopic("program").c_str());
-      mqttClient.subscribe(makeTopic("program", true).c_str());
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(mqttClient.state());
-      Serial.println(" try again in 5 seconds");
-
-      // Wait 5 seconds before retrying
-      delay(5000);
+      updateTimer = millis();
     }
   }
 }
@@ -598,9 +636,17 @@ void loop() {
     setupMQTT();
     shouldSaveConfig = false;
   }
-  if (wifiFeaturesEnabled && !mqttClient.connected()) { mqttConnect(); }
 
-  mqttClient.loop();
+  if (wifiFeaturesEnabled) {
+    if (mqttClient.connected()) {
+      mqttClient.loop();
+    } else {
+      mqttConnect();
+    }
+  }
+
   buttonLoop();
-  displayLoop();
+  if (shouldRunDisplay) {
+    displayLoop();
+  }
 }
