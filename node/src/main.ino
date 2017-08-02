@@ -22,9 +22,9 @@
 #define SETUP_AP_PASSWORD             "setupcenterpiece"
 
 // MQTT
-#define MAX_CONNECTION_ATTEMPTS       5 // Number of attempts before enabling display
-#define SHORT_CONNECTION_DELAY        5000 // Delay between initial connection attempts
-#define LONG_CONNECTION_DELAY         60000 // Delay between attempts after max attempts
+#define MAX_CONNECTION_ATTEMPTS       3 // Number of attempts before enabling display
+#define SHORT_CONNECTION_DELAY        3000 // Delay between initial connection attempts
+#define LONG_CONNECTION_DELAY         120000 // Delay between attempts after max attempts
 #define CONNECTING_BLINK_DELAY        500
 #define MQTT_ROOT                     "centerpiece"
 #define DEFAULT_MQTT_SERVER           ""
@@ -256,7 +256,7 @@ void mqttConnect() {
     // While connecting, blink the light. Don't blink if the display is active
     if (!shouldRunDisplay && updateTimeDiff > CONNECTING_BLINK_DELAY) {
       ledOn = !ledOn;
-      strip.setPixelColor(1, hsi2rgbw(120, 1, ledOn ? LED_INTENSITY : 0));
+      strip.setPixelColor(1, hsi2rgbw(180, 1, ledOn ? LED_INTENSITY : 0));
       strip.show();
 
       updateTimer = millis();
@@ -269,6 +269,7 @@ void mqttConnect() {
 
 void setupNeopixels() {
   strip.begin();
+  disableDisplay();
   strip.show();
 }
 
@@ -477,9 +478,8 @@ void buttonLoop() {
 
 // gets called when WiFiManager enters configuration mode
 void configModeCallback (WiFiManager *myWiFiManager) {
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
-    strip.setPixelColor(i, hsi2rgbw(240, 1, LED_INTENSITY));
-  }
+  uint32_t color = hsi2rgbw(240, 1, LED_INTENSITY);
+  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
   strip.show();
 
   Serial.println("Entered config mode...");
@@ -495,24 +495,29 @@ void saveConfigCallback() {
   shouldSaveConfig = true;
 }
 
+// Finishing steps for after wifi may be complete
 void finalizeWifi() {
   if (WiFi.status() != WL_CONNECTED){
     wifiFeaturesEnabled = false;
     Serial.print("Failed to connect to wifi. Playing failure animation then proceeding.");
 
+    // Flash the bad news, then activate the display
     for (size_t j = 0; j < 6; j++) {
       uint32_t color = hsi2rgbw(j % 2 ? 0 : 240, 1, LED_INTENSITY);
       for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
       strip.show();
-      delay(250);
+      delay(125);
     }
-  } else{
+    enableDisplay();
+  } else {
     wifiFeaturesEnabled = true;
     Serial.print("Connected to WiFi. Local IP: ");
     Serial.println(WiFi.localIP());
   }
 }
 
+// Fire up a captive portal to collect network and MQTT info
+// This portal is blocking, so the main loop can not run during this
 void wifiCaptivePortal() {
   // The extra parameters to be configured (can be either global or just in the setup). After
   // connecting, parameter.getValue() will get you the configured value:
@@ -576,14 +581,7 @@ void setupWifi() {
     // Force to station mode because if device was switched off while in access point mode it will
     // start up next time in access point mode.
     WiFi.mode(WIFI_STA);
-
-    unsigned long startedAt = millis();
-    Serial.print("After waiting ");
     int connRes = WiFi.waitForConnectResult();
-    float waited = (millis() - startedAt);
-    Serial.print(waited / 1000);
-    Serial.print(" secs in setup() connection result is ");
-    Serial.println(connRes);
   }
 
   finalizeWifi();
