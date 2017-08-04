@@ -35,6 +35,7 @@
 // Neopixel
 #define NEOPIXEL_PIN                  14
 #define NEOPIXEL_COUNT                5
+#define MAX_ATTEMPTS                  4
 
 // Buttons
 #define BUTTON_PIN                    12
@@ -123,10 +124,14 @@ bool topicMatch(String topic, String suffix) {
   return topic.equals(makeTopic(suffix)) || topic.equals(makeTopic(suffix, true));
 }
 
-// Note: This can be removed and the original `fmod` can be used once the followin issue is closed.
+// Note: This can be removed and the original `fmod` can be used once the following issue is closed.
 // https://github.com/esp8266/Arduino/issues/612
 double floatmod(double a, double b) {
-    return (a - b * floor(a / b));
+  return (a - b * floor(a / b));
+}
+
+float floatmap(float x, float in_min, float in_max, float out_min, float out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
 uint32_t hsi2rgbw(float H, float S, float I) {
@@ -333,14 +338,55 @@ void runProgramWhite(bool first) {
 
 // Program: Candle Flicker
 // Random flicker of brightness and duration, maybe tint
+// Inspiration:
+//   - https://github.com/timpear/NeoCandle
+//   - https://cpldcpu.com/2013/12/08/hacking-a-candleflicker-led/
+// Algorithm:
+// Candle LEDs follow a simple 16 level breakdown with 50% at full and equal weighting amongst the
+// remaining top 12 levels. The original sampling was around 13-14fps, this will run at 30, so we
+// could sample every other frame and interpolate between the two. The second algorith runs much
+// faster at up to 100fps but the flicker and burn modes only flip about 6 times a second.
+//
+// The 8-LED method uses a gradient along the LED strip which is set at pre-determined dips in a
+// random-like pattern that loops. The flicker/flutter/burn reduces the amount of green in the
+// initial amber-yellow color to increase the percieved red, as if the candle is losing power. With
+// HSI color space, this works out to moving towards red and increasing suration. This could be
+// simulated by having a max amber and min red, and using linear interpolation along the Hue and
+// Saturation values based on the output of the 4-15 random generator above.
 void runProgramCandle(bool first) {
   static unsigned long updateTimer = millis();
+  static bool getLevel = true;
+  static uint8_t level = 15;
+  static uint8_t lastLevel = 15;
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    uint32_t color = hsi2rgbw(60, 0.5, LED_INTENSITY);
-    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
+    float nowLevel;
+    if (getLevel) {
+      lastLevel = level;
+      level = random(24);
+      level = level >= 11 ? 15 : level + 4;
+      nowLevel = level;
+    } else {
+      nowLevel = abs(lastLevel - level) / 2;
+    }
+
+    // green-high 21, 0.5; green-mid 19, 0.9; green-low 15, 0.9
+    uint8_t hue = map(nowLevel, 0, 15, 15, 21);
+    float saturation = floatmap(nowLevel, 0, 15, 0.9, 0.6);
+    float intensity = map(nowLevel, 0, 15, LED_INTENSITY * 0.75, LED_INTENSITY);
+
+    // Find the tip color and the edge color
+    uint32_t centerColor = hsi2rgbw(hue, saturation, intensity);
+    uint32_t edgeColor = hsi2rgbw(hue, saturation, intensity - 0.1);
+
+    // Write them out
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
+      strip.setPixelColor(i, i == 1 ? centerColor : edgeColor);
+    }
     strip.show();
+
+    getLevel = !getLevel;
     updateTimer = millis();
   }
 }
