@@ -639,23 +639,36 @@ void buttonLoop() {
 
 // =-------------------------------------------------------------------------------------= WIFI =--=
 
-// gets called when WiFiManager enters configuration mode
-void configModeCallback (WiFiManager *myWiFiManager) {
-  uint32_t color = hsi2rgbw(240, 1, LED_INTENSITY);
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
-  strip.show();
-
-  Serial.println("Entered config mode...");
-  Serial.println(WiFi.softAPIP());
-
-  // if you used auto generated SSID, print it
-  Serial.println(myWiFiManager->getConfigPortalSSID());
+void setupWifi() {
+  if (WiFi.SSID() == "") {
+    Serial.println("We haven't got any access point credentials, so get them now");
+    wifiCaptivePortal();
+  } else {
+    connectWifi();
+  }
 }
 
-// Callback notifying us of the need to save config
-void saveConfigCallback() {
-  Serial.println("Should save config");
-  shouldSaveConfig = true;
+void connectWifi() {
+  // We need to check here again as this can be called multiple places
+  if (WiFi.SSID() != "") {
+    // Force to station mode because if device was switched off while in access point mode it will
+    // start up next time in access point mode.
+    WiFi.mode(WIFI_STA);
+    WiFi.waitForConnectResult();
+    finalizeWifi();
+  }
+}
+
+// Wifi wasn't connected for some reason, let's try again periodically
+void maybeConnectWifi() {
+  static unsigned long updateTimer = millis();
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  if (updateTimeDiff > WIFI_RECONNECT_TIMER) {
+    Serial.println("Attempting to reconnect to wifi...");
+    connectWifi();
+    updateTimer = millis();
+  }
 }
 
 // Finishing steps for after wifi may be complete
@@ -683,6 +696,25 @@ void finalizeWifi() {
     Serial.print("Connected to WiFi. Local IP: ");
     Serial.println(WiFi.localIP());
   }
+}
+
+// gets called when WiFiManager enters configuration mode
+void configModeCallback (WiFiManager *myWiFiManager) {
+  uint32_t color = hsi2rgbw(240, 1, LED_INTENSITY);
+  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
+  strip.show();
+
+  Serial.println("Entered config mode...");
+  Serial.println(WiFi.softAPIP());
+
+  // if you used auto generated SSID, print it
+  Serial.println(myWiFiManager->getConfigPortalSSID());
+}
+
+// Callback notifying us of the need to save config
+void saveConfigCallback() {
+  Serial.println("Should save config");
+  shouldSaveConfig = true;
 }
 
 // Fire up a captive portal to collect network and MQTT info
@@ -740,38 +772,6 @@ void wifiCaptivePortal() {
   }
 
   finalizeWifi();
-}
-
-void setupWifi() {
-  if (WiFi.SSID() == "") {
-    Serial.println("We haven't got any access point credentials, so get them now");
-    wifiCaptivePortal();
-  } else {
-    connectWifi();
-  }
-}
-
-void connectWifi() {
-  // We need to check here again as this can be called multiple places
-  if (WiFi.SSID() != "") {
-    // Force to station mode because if device was switched off while in access point mode it will
-    // start up next time in access point mode.
-    WiFi.mode(WIFI_STA);
-    WiFi.waitForConnectResult();
-    finalizeWifi();
-  }
-}
-
-// Wifi wasn't connected for some reason, let's try again periodically
-void maybeConnectWifi() {
-  static unsigned long updateTimer = millis();
-
-  unsigned long updateTimeDiff = millis() - updateTimer;
-  if (updateTimeDiff > WIFI_RECONNECT_TIMER) {
-    Serial.println("Attempting to reconnect to wifi...");
-    connectWifi();
-    updateTimer = millis();
-  }
 }
 
 
