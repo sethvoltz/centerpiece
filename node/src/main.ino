@@ -37,11 +37,10 @@
 // Neopixel
 #define NEOPIXEL_PIN                  14
 #define NEOPIXEL_COUNT                5
-#define MAX_ATTEMPTS                  4
 
 // Buttons
 #define BUTTON_PIN                    12
-#define DEBOUNCE_MS                   30
+#define DEBOUNCE_MS                   50
 #define HOLD_TIME_MS                  3000
 
 
@@ -115,6 +114,7 @@ float currentBPS = 1; // Calculate BPM / 60 on save, instead of in each display 
 
 // =--------------------------------------------------------------------------------= Utilities =--=
 
+// Turn a topic suffix into a full MQTT topic for the centerpiece namespace
 String makeTopic(String suffix, bool all = false) {
   if (all) {
     return String(String(MQTT_ROOT) + "/all/" + suffix);
@@ -122,6 +122,7 @@ String makeTopic(String suffix, bool all = false) {
   return String(String(MQTT_ROOT) + "/" + clientId + "/" + suffix);
 }
 
+// Check if a given topic containes the suffix and is for this or all nodes
 bool topicMatch(String topic, String suffix) {
   return topic.equals(makeTopic(suffix)) || topic.equals(makeTopic(suffix, true));
 }
@@ -132,10 +133,12 @@ double floatmod(double a, double b) {
   return (a - b * floor(a / b));
 }
 
+// Same as the Arduino API map() function, except for floats
 float floatmap(float x, float in_min, float in_max, float out_min, float out_max) {
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
+// Convert HSI colors to RGBW Neopixel colors
 uint32_t hsi2rgbw(float H, float S, float I) {
   int r, g, b, w;
   float cos_h, cos_1047_h;
@@ -335,6 +338,7 @@ void runProgramWhite(bool first) {
 
 // Program: Candle Flicker
 // Random flicker of brightness and duration, maybe tint
+//
 // Inspiration:
 //   - https://github.com/timpear/NeoCandle
 //   - https://cpldcpu.com/2013/12/08/hacking-a-candleflicker-led/
@@ -413,6 +417,7 @@ void runProgramRainbow(bool first) {
 
 // Program: Twinkle
 // Light blue and white strobes randomly spaced
+// Uses global rate value to control duration
 void runProgramTwinkle(bool first) {
   static unsigned long updateTimer = millis();
   static unsigned long sparkleTimer = millis();
@@ -483,6 +488,7 @@ void runProgramTwinkle(bool first) {
 
 // Program: Night Sky
 // Shades of blue and purple rolling fade, twinkle strobes
+// Uses global rate value to control duration
 void runProgramNight(bool first) {
   static unsigned long updateTimer = millis();
   static unsigned long sparkleTimer = millis();
