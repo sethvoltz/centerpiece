@@ -355,26 +355,28 @@ void runProgramWhite(bool first) {
 // Saturation values based on the output of the 4-15 random generator above.
 void runProgramCandle(bool first) {
   static unsigned long updateTimer = millis();
-  static bool getLevel = true;
-  static uint8_t level = 15;
+  static uint8_t frameCounter = UINT8_MAX;
+  static uint8_t nextLevel = 15;
   static uint8_t lastLevel = 15;
 
   unsigned long updateTimeDiff = millis() - updateTimer;
-  if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    float nowLevel;
-    if (getLevel) {
-      lastLevel = level;
-      level = random(24);
-      level = level >= 11 ? 15 : level + 4;
-      nowLevel = level;
+  if (first || updateTimeDiff > (FRAME_DELAY_MS)) {
+    float displayLevel;
+    if (first || frameCounter >= 3) { // every n frames
+      lastLevel = nextLevel;
+      nextLevel = random(4, 32);
+      nextLevel = nextLevel >= 15 ? 15 : nextLevel; // 50% full on, 50% evenly over remaining levels
+      displayLevel = lastLevel; // Set the current level to the
+      frameCounter = 0;
     } else {
-      nowLevel = abs(lastLevel - level) / 2;
+      // Tick from last level to new (next) level over n frames
+      displayLevel = floatmap(frameCounter, 0, 3, lastLevel, nextLevel);
     }
 
     // green-high 21, 0.5; green-mid 19, 0.9; green-low 15, 0.9
-    uint8_t hue = map(nowLevel, 0, 15, 15, 21);
-    float saturation = floatmap(nowLevel, 0, 15, 0.9, 0.6);
-    float intensity = map(nowLevel, 0, 15, LED_INTENSITY * 0.75, LED_INTENSITY);
+    float hue = floatmap(displayLevel, 0, 15, 15, 21);
+    float saturation = floatmap(displayLevel, 0, 15, 0.9, 0.6);
+    float intensity = floatmap(displayLevel, 0, 15, LED_INTENSITY * 0.75, LED_INTENSITY);
 
     // Find the tip color and the edge color
     uint32_t centerColor = hsi2rgbw(hue, saturation, intensity);
@@ -386,7 +388,7 @@ void runProgramCandle(bool first) {
     }
     strip.show();
 
-    getLevel = !getLevel;
+    frameCounter++;
     updateTimer = millis();
   }
 }
@@ -687,6 +689,7 @@ void setup() {
   ESP.wdtEnable(WDTO_8S);
 
   // Setup :allthethings:
+  randomSeed(analogRead(0));
   setupNeopixels();
   setupFileSystem();
   setupButton();
