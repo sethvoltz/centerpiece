@@ -20,6 +20,7 @@
 // Wifi
 #define SETUP_AP_NAME                 "Setup Centerpiece"
 #define SETUP_AP_PASSWORD             "setupcenterpiece"
+#define WIFI_RECONNECT_TIMER          60000 // Delay for rechecking wifi if disconnected
 
 // MQTT
 #define MAX_CONNECTION_ATTEMPTS       3 // Number of attempts before enabling display
@@ -248,11 +249,6 @@ void mqttConnect() {
             );
           }
           enableDisplay();
-        } else {
-          if (shouldRunDisplay) {
-            Serial.println("Initial attempt to connect to MQTT server, disabling display.");
-          }
-          disableDisplay();
         }
       }
       connectTimer = millis();
@@ -547,16 +543,22 @@ void saveConfigCallback() {
 void finalizeWifi() {
   if (WiFi.status() != WL_CONNECTED){
     wifiFeaturesEnabled = false;
-    Serial.print("Failed to connect to wifi. Playing failure animation then proceeding.");
+    Serial.print("Failed to connect to wifi. ");
 
-    // Flash the bad news, then activate the display
-    for (size_t j = 0; j < 6; j++) {
-      uint32_t color = hsi2rgbw(j % 2 ? 0 : 240, 1, LED_INTENSITY);
-      for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
-      strip.show();
-      delay(125);
+    if (shouldRunDisplay) {
+      // Display is already running
+      Serial.printf("Will try again in %d seconds.", (WIFI_RECONNECT_TIMER / 1000));
+    } else {
+      Serial.println("Playing failure animation then proceeding.");
+      // Flash the bad news, then activate the display
+      for (size_t j = 0; j < 6; j++) {
+        uint32_t color = hsi2rgbw(j % 2 ? 0 : 240, 1, LED_INTENSITY);
+        for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
+        strip.show();
+        delay(125);
+      }
+      enableDisplay();
     }
-    enableDisplay();
   } else {
     wifiFeaturesEnabled = true;
     Serial.print("Connected to WiFi. Local IP: ");
@@ -626,13 +628,31 @@ void setupWifi() {
     Serial.println("We haven't got any access point credentials, so get them now");
     wifiCaptivePortal();
   } else {
+    connectWifi();
+  }
+}
+
+void connectWifi() {
+  // We need to check here again as this can be called multiple places
+  if (WiFi.SSID() != "") {
     // Force to station mode because if device was switched off while in access point mode it will
     // start up next time in access point mode.
     WiFi.mode(WIFI_STA);
-    int connRes = WiFi.waitForConnectResult();
+    WiFi.waitForConnectResult();
+    finalizeWifi();
   }
+}
 
-  finalizeWifi();
+// Wifi wasn't connected for some reason, let's try again periodically
+void maybeConnectWifi() {
+  static unsigned long updateTimer = millis();
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  if (updateTimeDiff > WIFI_RECONNECT_TIMER) {
+    Serial.println("Attempting to reconnect to wifi...");
+    connectWifi();
+    updateTimer = millis();
+  }
 }
 
 
@@ -713,6 +733,8 @@ void loop() {
     } else {
       mqttConnect();
     }
+  } else {
+    maybeConnectWifi();
   }
 
   buttonLoop();
