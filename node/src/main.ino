@@ -16,6 +16,7 @@
 #define FRAME_DELAY_MS                1000 / DISPLAY_FPS
 #define LED_INTENSITY                 0.5 // 0-1.0 - 50% power
 #define BEAT_MULTIPLIER               2 // Number of beats per cycle or sequence
+#define SPARKLE_FRAMES                7
 
 // Wifi
 #define SETUP_AP_NAME                 "Setup Centerpiece"
@@ -414,12 +415,68 @@ void runProgramRainbow(bool first) {
 // Light blue and white strobes randomly spaced
 void runProgramTwinkle(bool first) {
   static unsigned long updateTimer = millis();
+  static unsigned long sparkleTimer = millis();
+  static float programOffset = 0.0;
+  static float programCurrent;
+  static float programTarget;
+  static uint16_t sparkleDelay;
+  static uint8_t sparkleLED;
+  static uint8_t sparkleFrame;
+
+  if (first) {
+    programCurrent = random(170, 220);
+    programTarget = random(170, 220);
+    programOffset = 0;
+    sparkleDelay = random(5000, 20000);
+    sparkleLED = random(NEOPIXEL_COUNT);
+    sparkleFrame = 0;
+  }
 
   unsigned long updateTimeDiff = millis() - updateTimer;
+  unsigned long sparkleTimeDiff = millis() - sparkleTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    uint32_t color = hsi2rgbw(200, 1, LED_INTENSITY);
+    // 100 bpm / 60 sec = 1.6667 bps. 30 fps / 1.667 bps = 18 frames per beat
+    // Assume a 4 count for most music and fade over 4 beats? At 100 bpm, that's 72 frames
+    int framesPerFade = DISPLAY_FPS / currentBPS * BEAT_MULTIPLIER;
+    float offset = (programTarget - programCurrent) / framesPerFade;
+    float hue = programCurrent + (offset * programOffset);
+
+    uint32_t color = hsi2rgbw(hue, 1, LED_INTENSITY);
     for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
+
+    // Check if it's time for a sparkle
+    if (sparkleTimeDiff > sparkleDelay) {
+      float saturation;
+      uint8_t midframe = SPARKLE_FRAMES / 2;
+
+      // Fade up for half the cycle, then back down
+      if (sparkleFrame <= midframe) {
+        saturation = floatmap(sparkleFrame, 0, midframe, 1, 0);
+      } else {
+        saturation = floatmap(sparkleFrame, 0, midframe, 0, 1);
+      }
+
+      strip.setPixelColor(sparkleLED, hsi2rgbw(hue, saturation, LED_INTENSITY));
+
+      // Run the sparkle for a few frames, then reinit
+      if (sparkleFrame >= SPARKLE_FRAMES) {
+        sparkleDelay = random(5000, 20000);
+        sparkleLED = random(NEOPIXEL_COUNT);
+        sparkleFrame = 0;
+        sparkleTimer = millis();
+      } else {
+        sparkleFrame++;
+      }
+    }
     strip.show();
+
+    programOffset++;
+    if (programOffset > framesPerFade) {
+      programCurrent = programTarget; // copy
+      programTarget = random(170, 220); // init
+      programOffset = 0;
+    }
+
     updateTimer = millis();
   }
 }
