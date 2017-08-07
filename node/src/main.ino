@@ -360,8 +360,8 @@ void runProgramCandle(bool first) {
     float displayLevel;
     if (first || frameCounter >= 3) { // every n frames
       lastLevel = nextLevel;
-      nextLevel = random(4, 32);
-      nextLevel = nextLevel >= 15 ? 15 : nextLevel; // 50% full on, 50% evenly over remaining levels
+      nextLevel = random(4, 48);
+      nextLevel = nextLevel >= 15 ? 15 : nextLevel; // 66% full on, remainder even over lower levels
       displayLevel = lastLevel; // Set the current level to the
       frameCounter = 0;
     } else {
@@ -369,9 +369,9 @@ void runProgramCandle(bool first) {
       displayLevel = floatmap(frameCounter, 0, 3, lastLevel, nextLevel);
     }
 
-    // green-high 21, 0.5; green-mid 19, 0.9; green-low 15, 0.9
-    float hue = floatmap(displayLevel, 0, 15, 15, 21);
-    float saturation = floatmap(displayLevel, 0, 15, 0.9, 0.6);
+    // green-high 21, 0.6; green-mid 19, 0.9; green-low 15, 0.9
+    float hue = floatmap(displayLevel, 0, 15, 20, 30);
+    float saturation = floatmap(displayLevel, 0, 15, 0.8, 0.6);
     float intensity = floatmap(displayLevel, 0, 15, LED_INTENSITY * 0.75, LED_INTENSITY);
 
     // Find the tip color and the edge color
