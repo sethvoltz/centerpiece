@@ -651,6 +651,12 @@ void setupWifi() {
 void connectWifi() {
   // We need to check here again as this can be called multiple places
   if (WiFi.SSID() != "") {
+    if (!shouldRunDisplay) {
+      // Set status LED for WIFI connection start
+      strip.setPixelColor(1, hsi2rgbw(20, 1, LED_INTENSITY / 2));
+      strip.show();
+    }
+
     // Force to station mode because if device was switched off while in access point mode it will
     // start up next time in access point mode.
     WiFi.mode(WIFI_STA);
