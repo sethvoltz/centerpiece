@@ -203,6 +203,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
     setProgram(message);
   } else if (topicMatch(topic, "bpm")) {
     setBPM(message);
+  } else if (topicMatch(topic, "battery")) {
+    reportBattery();
   }
 }
 
@@ -347,6 +349,7 @@ void runProgramWhite(bool first) {
 // Inspiration:
 //   - https://github.com/timpear/NeoCandle
 //   - https://cpldcpu.com/2013/12/08/hacking-a-candleflicker-led/
+// 
 // Algorithm:
 // Candle LEDs follow a simple 16 level breakdown with 50% at full and equal weighting amongst the
 // remaining top 12 levels. The original sampling was around 13-14fps, this will run at 30, so we
@@ -841,27 +844,34 @@ void batteryLoop() {
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (updateTimeDiff > BATTERY_READ_TIMER) {
-    // Analog pin A0 is a 10bit ADC that reads from 0-1.0v off the regulator input. The 3AAA battery
-    // bank has a max of 3*1.6V or 4.8V, assuming 5V to be safe for USB input, we need a 5:1 voltage
-    // divider (or there-abouts) from the V_bat and Gnd. Values below will be set based on actual
-    // resistor network.
-    // e.g. a V_bat -> 1.5kΩ -> x -> 330Ω -> Gnd would divide 0-5.55v to 0-1v
-    int batteryRead = analogRead(BATTERY_READ_PIN);
-    float batteryVoltage = floatmap(batteryRead, 0, 1023, 0, BATTERY_DIVIDER_MAX_V);
-    char str_voltage[6];
-
-    // 4 minimum string length, 2 precise; converted value to в str
-    dtostrf(batteryVoltage, 4, 2, str_voltage);
-
-    Serial.printf("Battery voltage is %sV\n", str_voltage);
-    // Serial.print(batteryVoltage); // Because ESP println doesn't do float
-    // Serial.println("V");
-
-    // Publish
-    mqttClient.publish(makeTopic("battery").c_str(), str_voltage);
-
+    reportBattery();
     updateTimer = millis();
   }
+}
+
+float checkBattery() {
+  // Analog pin A0 is a 10bit ADC that reads from 0-1.0v off the regulator input. The 3AAA battery
+  // bank has a max of 3*1.6V or 4.8V, assuming 5V to be safe for USB input, we need a 5:1 voltage
+  // divider (or there-abouts) from the V_bat and Gnd. Values below will be set based on actual
+  // resistor network.
+  // e.g. a V_bat -> 1.5kΩ -> x -> 330Ω -> Gnd would divide 0-5.55v to 0-1v
+  int adcRead = analogRead(BATTERY_READ_PIN);
+  return floatmap(adcRead, 0, 1023, 0, BATTERY_DIVIDER_MAX_V);
+
+  // TODO: Maintain global low-battery state and alert by disabling display & flashing warning
+  // The central controller should also keep track of voltages across the network and trigger
+  // some warning or notification that one or more devices are running low. A nice-to-have would
+  // be to have an estimated runtime remaining for each device
+}
+
+void reportBattery() {
+  // Convert battery voltage float to string
+  char batteryVoltage[6];
+  dtostrf(checkBattery(), 4, 2, batteryVoltage); // 4 min string length, 2 digits precision
+  Serial.printf("Battery voltage is %sV\n", batteryVoltage);
+
+  // Publish to network
+  mqttClient.publish(makeTopic("battery").c_str(), batteryVoltage);
 }
 
 
