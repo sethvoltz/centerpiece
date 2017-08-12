@@ -45,7 +45,7 @@
 
 // Battery Monitor
 #define BATTERY_READ_PIN              A0
-#define BATTERY_READ_TIMER            15000 // Delay between battery reads ~1 min is usually fine
+#define BATTERY_READ_TIMER            60000 // Delay between battery reads ~1 min is usually fine
 #define BATTERY_DIVIDER_MAX_V         5.556 // The maximum voltage on the divider to sense 1.0v out
 
 
