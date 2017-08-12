@@ -43,6 +43,11 @@
 #define DEBOUNCE_MS                   50
 #define HOLD_TIME_MS                  3000
 
+// Battery Monitor
+#define BATTERY_READ_PIN              A0
+#define BATTERY_READ_TIMER            15000 // Delay between battery reads ~1 min is usually fine
+#define BATTERY_DIVIDER_MAX_V         5.556 // The maximum voltage on the divider to sense 1.0v out
+
 
 // =-------------------------------------------------------------------------------= Prototypes =--=
 
@@ -823,6 +828,43 @@ void setupFileSystem() {
 }
 
 
+// =--------------------------------------------------------------------------= Battery Monitor =--=
+
+void setupBattery() {
+  pinMode(BATTERY_READ_PIN, INPUT_PULLUP);
+}
+
+// Check for battery voltage
+// Minimum supply voltage for the Huzzah 8266 is a little over 3V
+void batteryLoop() {
+  static unsigned long updateTimer = millis();
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  if (updateTimeDiff > BATTERY_READ_TIMER) {
+    // Analog pin A0 is a 10bit ADC that reads from 0-1.0v off the regulator input. The 3AAA battery
+    // bank has a max of 3*1.6V or 4.8V, assuming 5V to be safe for USB input, we need a 5:1 voltage
+    // divider (or there-abouts) from the V_bat and Gnd. Values below will be set based on actual
+    // resistor network.
+    // e.g. a V_bat -> 1.5kΩ -> x -> 330Ω -> Gnd would divide 0-5.55v to 0-1v
+    int batteryRead = analogRead(BATTERY_READ_PIN);
+    float batteryVoltage = floatmap(batteryRead, 0, 1023, 0, BATTERY_DIVIDER_MAX_V);
+    char str_voltage[6];
+
+    // 4 minimum string length, 2 precise; converted value to в str
+    dtostrf(batteryVoltage, 4, 2, str_voltage);
+
+    Serial.printf("Battery voltage is %sV\n", str_voltage);
+    // Serial.print(batteryVoltage); // Because ESP println doesn't do float
+    // Serial.println("V");
+
+    // Publish
+    mqttClient.publish(makeTopic("battery").c_str(), str_voltage);
+
+    updateTimer = millis();
+  }
+}
+
+
 // =---------------------------------------------------------------------------= Setup and Loop =--=
 
 void setup() {
@@ -834,6 +876,7 @@ void setup() {
   ESP.wdtEnable(WDTO_8S);
 
   // Setup :allthethings:
+  setupBattery();
   randomSeed(analogRead(0));
   setupNeopixels();
   setupFileSystem();
@@ -846,6 +889,8 @@ void setup() {
 }
 
 void loop() {
+  batteryLoop();
+
   if (shouldSaveConfig) {
     // Config was rewritten, be sure to rerun setup that uses it
     setupMQTT();
