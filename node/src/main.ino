@@ -14,7 +14,7 @@
 // Programs
 #define DISPLAY_FPS                   30
 #define FRAME_DELAY_MS                1000 / DISPLAY_FPS
-#define LED_INTENSITY                 0.5 // 0-1.0 - 50% power
+#define DEFAULT_INTENSITY             0.5 // 0-1.0 - 50% power
 #define BEAT_MULTIPLIER               2 // Number of beats per cycle or sequence
 #define SPARKLE_FRAMES                7
 
@@ -113,8 +113,9 @@ bool hasBoot = false;    // Handle a bug where a short press is triggered on boo
 // Save data flag for setup config
 bool shouldSaveConfig = false;
 
-// Current Tempo
+// Display
 float currentBPS = 1; // Calculate BPM / 60 on save, instead of in each display loop
+float globalIntensity = DEFAULT_INTENSITY;
 
 
 // =--------------------------------------------------------------------------------= Utilities =--=
@@ -205,6 +206,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
     setBPM(message);
   } else if (topicMatch(topic, "battery")) {
     reportBattery();
+  } else if (topicMatch(topic, "brightness")) {
+    setBrightness(message);
   }
 }
 
@@ -268,7 +271,7 @@ void mqttConnect() {
     // While connecting, blink the light. Don't blink if the display is active
     if (!shouldRunDisplay && updateTimeDiff > CONNECTING_BLINK_DELAY) {
       ledOn = !ledOn;
-      strip.setPixelColor(1, hsi2rgbw(180, 1, ledOn ? LED_INTENSITY : 0));
+      strip.setPixelColor(1, hsi2rgbw(180, 1, ledOn ? globalIntensity : 0));
       strip.show();
 
       updateTimer = millis();
@@ -299,6 +302,18 @@ void setBPM(String bpm) {
   // Convert Beats per Minute to Beats per Second as a 1-time calculation on save
   currentBPS = atoi(bpm.c_str()) / 60;
   Serial.printf("Setting current BPM to %s\n", bpm.c_str());
+}
+
+void setBrightness(int brightness) {
+  // Convert brightness percentage to float 0-1.0 value
+  if (brightness >= 0 && brightness < 100) {
+    globalIntensity = brightness / 100.0;
+    Serial.printf("Setting brightness to %d%%\n", brightness);
+  }
+}
+
+void setBrightness(String brightness) {
+  setBrightness(brightness.toInt());
 }
 
 void setProgram(int program) {
@@ -336,7 +351,7 @@ void runProgramWhite(bool first) {
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    uint32_t color = hsi2rgbw(0, 0, LED_INTENSITY);
+    uint32_t color = hsi2rgbw(0, 0, globalIntensity);
     for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
     strip.show();
     updateTimer = millis();
@@ -349,7 +364,7 @@ void runProgramWhite(bool first) {
 // Inspiration:
 //   - https://github.com/timpear/NeoCandle
 //   - https://cpldcpu.com/2013/12/08/hacking-a-candleflicker-led/
-// 
+//
 // Algorithm:
 // Candle LEDs follow a simple 16 level breakdown with 50% at full and equal weighting amongst the
 // remaining top 12 levels. The original sampling was around 13-14fps, this will run at 30, so we
@@ -385,7 +400,7 @@ void runProgramCandle(bool first) {
     // green-high 21, 0.6; green-mid 19, 0.9; green-low 15, 0.9
     float hue = floatmap(displayLevel, 0, 15, 20, 30);
     float saturation = floatmap(displayLevel, 0, 15, 0.8, 0.6);
-    float intensity = floatmap(displayLevel, 0, 15, LED_INTENSITY * 0.75, LED_INTENSITY);
+    float intensity = floatmap(displayLevel, 0, 15, globalIntensity * 0.75, globalIntensity);
 
     // Find the tip color and the edge color
     uint32_t centerColor = hsi2rgbw(hue, saturation, intensity);
@@ -411,7 +426,7 @@ void runProgramRainbow(bool first) {
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    uint32_t color = hsi2rgbw(hueOffset, 1, LED_INTENSITY);
+    uint32_t color = hsi2rgbw(hueOffset, 1, globalIntensity);
     for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
     strip.show();
 
@@ -454,7 +469,7 @@ void runProgramTwinkle(bool first) {
     float offset = (programTarget - programCurrent) / framesPerFade;
     float hue = programCurrent + (offset * programOffset);
 
-    uint32_t color = hsi2rgbw(hue, 1, LED_INTENSITY);
+    uint32_t color = hsi2rgbw(hue, 1, globalIntensity);
     for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
 
     // Check if it's time for a sparkle
@@ -469,7 +484,7 @@ void runProgramTwinkle(bool first) {
         saturation = floatmap(sparkleFrame, 0, midframe, 0, 1);
       }
 
-      strip.setPixelColor(sparkleLED, hsi2rgbw(hue, saturation, LED_INTENSITY));
+      strip.setPixelColor(sparkleLED, hsi2rgbw(hue, saturation, globalIntensity));
 
       // Run the sparkle for a few frames, then reinit
       if (sparkleFrame >= SPARKLE_FRAMES) {
@@ -525,7 +540,7 @@ void runProgramNight(bool first) {
     float offset = (programTarget - programCurrent) / framesPerFade;
     float hue = programCurrent + (offset * programOffset);
 
-    uint32_t color = hsi2rgbw(hue, 1, LED_INTENSITY);
+    uint32_t color = hsi2rgbw(hue, 1, globalIntensity);
     for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
 
     // Check if it's time for a sparkle
@@ -540,7 +555,7 @@ void runProgramNight(bool first) {
         saturation = floatmap(sparkleFrame, 0, midframe, 0, 1);
       }
 
-      strip.setPixelColor(sparkleLED, hsi2rgbw(hue, saturation, LED_INTENSITY));
+      strip.setPixelColor(sparkleLED, hsi2rgbw(hue, saturation, globalIntensity));
 
       // Run the sparkle for a few frames, then reinit
       if (sparkleFrame >= SPARKLE_FRAMES) {
@@ -588,7 +603,7 @@ void runProgramDance(bool first) {
     float offset = (danceTarget - danceCurrent) / framesPerFade;
     float hue = danceCurrent + (offset * danceOffset);
 
-    uint32_t color = hsi2rgbw(hue, 1, LED_INTENSITY);
+    uint32_t color = hsi2rgbw(hue, 1, globalIntensity);
     for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
     strip.show();
 
@@ -661,7 +676,7 @@ void connectWifi() {
   if (WiFi.SSID() != "") {
     if (!shouldRunDisplay) {
       // Set status LED for WIFI connection start
-      strip.setPixelColor(1, hsi2rgbw(20, 1, LED_INTENSITY / 2));
+      strip.setPixelColor(1, hsi2rgbw(20, 1, globalIntensity / 2));
       strip.show();
     }
 
@@ -698,7 +713,7 @@ void finalizeWifi() {
       Serial.println("Playing failure animation then proceeding.");
       // Flash the bad news, then activate the display
       for (size_t j = 0; j < 6; j++) {
-        uint32_t color = hsi2rgbw(j % 2 ? 0 : 240, 1, LED_INTENSITY);
+        uint32_t color = hsi2rgbw(j % 2 ? 0 : 240, 1, globalIntensity);
         for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
         strip.show();
         delay(125);
@@ -714,7 +729,7 @@ void finalizeWifi() {
 
 // gets called when WiFiManager enters configuration mode
 void configModeCallback (WiFiManager *myWiFiManager) {
-  uint32_t color = hsi2rgbw(240, 1, LED_INTENSITY);
+  uint32_t color = hsi2rgbw(240, 1, globalIntensity);
   for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
   strip.show();
 
