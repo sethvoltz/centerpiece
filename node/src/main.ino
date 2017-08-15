@@ -294,8 +294,7 @@ void enableDisplay() {
 
 void disableDisplay() {
   shouldRunDisplay = false;
-  uint32_t color = hsi2rgbw(0, 0, 0);
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
+  strip.clear();
 }
 
 void setBPM(String bpm) {
@@ -377,6 +376,13 @@ void runProgramWhite(bool first) {
 // HSI color space, this works out to moving towards red and increasing suration. This could be
 // simulated by having a max amber and min red, and using linear interpolation along the Hue and
 // Saturation values based on the output of the 4-15 random generator above.
+//
+// TODO: The hardware allows for the candle flame to move in space as well as time. A breaze or
+//       gust of wind will move a candle flame from side to side. Perhaps another random chance
+//       can determine the intensity of the flicker which would move it around an angle and distance
+//       from center, which would be realized by altering the brightness across the plus-shaped LESs
+// TODO: Check out this candle palette to see if it happens to look more realistc:
+//       https://github.com/choard1895/monolith_lamp/blob/master/software/Monolith/src/palette.cpp#L105-L122
 void runProgramCandle(bool first) {
   static unsigned long updateTimer = millis();
   static uint8_t frameCounter = UINT8_MAX;
@@ -441,6 +447,8 @@ void runProgramRainbow(bool first) {
 // Program: Twinkle
 // Light blue and white strobes randomly spaced
 // Uses global rate value to control duration
+//
+// TODO: Abstract this program out to a generic color fader with twinkle effect, use for Night mode
 void runProgramTwinkle(bool first) {
   static unsigned long updateTimer = millis();
   static unsigned long sparkleTimer = millis();
