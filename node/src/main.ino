@@ -14,6 +14,7 @@
 // Programs
 #define DISPLAY_FPS                   30
 #define FRAME_DELAY_MS                1000 / DISPLAY_FPS
+#define BLINK_DELAY_MS                333 // 3 fps
 #define DEFAULT_INTENSITY             0.5 // 0-1.0 - 50% power
 #define BEAT_MULTIPLIER               2 // Number of beats per cycle or sequence
 #define SPARKLE_FRAMES                7
@@ -757,6 +758,8 @@ void saveConfigCallback() {
 // Fire up a captive portal to collect network and MQTT info
 // This portal is blocking, so the main loop can not run during this
 void wifiCaptivePortal() {
+  // WiFi.disconnect(); // Reset saved WiFi networks. Good for blowing out a config/debugging
+
   // The extra parameters to be configured (can be either global or just in the setup). After
   // connecting, parameter.getValue() will get you the configured value:
   // id/name, placeholder/prompt, default, length
