@@ -14,16 +14,19 @@ The most complicated part is the Interface because of the complexity of the LED 
 
 A quick test with one node shows that it's possible to get a comfortable 10 messages per second and a spotty 20-30 messages per second throughput. This suggests that node control should primarily be to set the current mode, and not to control every change. Responsiveness seems fairly good, however, so doing sound-reactive beats might still be a possibility.
 
-### Current Mode Ideas
+### Implemented Modes
 
 - White -- steady light, used to illuminate the plant
 - Candle flicker -- random flicker of brightness and duration, maybe tint
 - Rainbow fade -- cycle through the color wheel at full saturation
-- Synchronized rainbow fade -- same as rainbow fade but all nodes synchronized
 - Twinkle -- light blue and white strobes randomly spaced
 - Night sky -- shades of blue and purple rolling fade, twinkle mixed in
-- Manual color -- rotary encoder to send single HSI to all nodes
 - Dance mode -- fade between random colors with rotary BPM select
+
+### Current Mode Ideas
+
+- Synchronized rainbow fade -- same as rainbow fade but all nodes synchronized
+- Manual color -- rotary encoder to send single HSI to all nodes
 - Synchronized dance mode -- same as dance mode but all nodes synchronized
 
 ### Control Commands
@@ -58,6 +61,12 @@ This would be modified to take the "true" time, in millis since the UNIX epoc, a
 [so-ntp-answer]: http://stackoverflow.com/a/1230826/772207
 
 ## Notes
+
+To ensure FTDI drivers are correct (especially for High Sierra and above):
+```
+brew tap caskroom/drivers
+brew cask install ftdi-vcp-driver
+```
 
 Start the Mosquitto server localhost:
 `mosquitto -c /usr/local/etc/mosquitto/mosquitto.conf`
