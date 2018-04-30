@@ -414,18 +414,118 @@ void runProgramRainbow(bool first) {
   }
 }
 
-// TODO: Implement
 void runProgramTwinkle(bool first) {
-  uint32_t color = hsi2rgbw(200, 1, globalIntensity);
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
-  strip.show();
+  static unsigned long updateTimer = millis();
+  static unsigned long sparkleTimer = millis();
+  static float programOffset = 0.0;
+  static uint16_t sparkleDelay;
+  static uint8_t sparkleLED;
+  static uint8_t sparkleFrame;
+
+  if (first) {
+    programOffset = 0;
+    sparkleDelay = random(1000, 3000);
+    sparkleLED = random(NEOPIXEL_COUNT);
+    sparkleFrame = 0;
+  }
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  unsigned long sparkleTimeDiff = millis() - sparkleTimer;
+  if (first || updateTimeDiff > FRAME_DELAY_MS) {
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
+      // 220 - 170 = 50
+      float hue = fmod((i + programOffset) * (50 / NEOPIXEL_COUNT), 50) + 170;
+      strip.setPixelColor(i, hsi2rgbw(hue, 1, globalIntensity));
+    }
+
+
+    // Check if it's time for a sparkle
+    if (sparkleTimeDiff > sparkleDelay) {
+      float saturation;
+      uint8_t midframe = SPARKLE_FRAMES / 2;
+
+      // Fade up for half the cycle, then back down
+      if (sparkleFrame <= midframe) {
+        saturation = floatmap(sparkleFrame, 0, midframe, 1, 0);
+      } else {
+        saturation = floatmap(sparkleFrame, 0, midframe, 0, 1);
+      }
+
+      float hue = fmod((sparkleLED + programOffset) * ((50 / NEOPIXEL_COUNT) + 170), 50);
+      strip.setPixelColor(sparkleLED, hsi2rgbw(hue, saturation, globalIntensity));
+
+      // Run the sparkle for a few frames, then reinit
+      if (sparkleFrame >= SPARKLE_FRAMES) {
+        sparkleDelay = random(1000, 3000);
+        sparkleLED = random(NEOPIXEL_COUNT);
+        sparkleFrame = 0;
+        sparkleTimer = millis();
+      } else {
+        sparkleFrame++;
+      }
+    }
+    strip.show();
+
+    programOffset = fmod(360 + programOffset - 0.25, 360);
+    updateTimer = millis();
+  }
 }
 
-// TODO: Implement
 void runProgramNight(bool first) {
-  uint32_t color = hsi2rgbw(250, 1, globalIntensity);
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
-  strip.show();
+  static unsigned long updateTimer = millis();
+  static unsigned long sparkleTimer = millis();
+  static float programOffset = 0.0;
+  static uint16_t sparkleDelay;
+  static uint8_t sparkleLED;
+  static uint8_t sparkleFrame;
+
+  if (first) {
+    programOffset = 0;
+    sparkleDelay = random(1000, 3000);
+    sparkleLED = random(NEOPIXEL_COUNT);
+    sparkleFrame = 0;
+  }
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  unsigned long sparkleTimeDiff = millis() - sparkleTimer;
+  if (first || updateTimeDiff > FRAME_DELAY_MS) {
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
+      // 270 - 220 = 50
+      float hue = fmod((i + programOffset) * (50 / NEOPIXEL_COUNT), 50) + 220;
+      strip.setPixelColor(i, hsi2rgbw(hue, 1, globalIntensity));
+    }
+
+
+    // Check if it's time for a sparkle
+    if (sparkleTimeDiff > sparkleDelay) {
+      float saturation;
+      uint8_t midframe = SPARKLE_FRAMES / 2;
+
+      // Fade up for half the cycle, then back down
+      if (sparkleFrame <= midframe) {
+        saturation = floatmap(sparkleFrame, 0, midframe, 1, 0);
+      } else {
+        saturation = floatmap(sparkleFrame, 0, midframe, 0, 1);
+      }
+
+      float hue = fmod((sparkleLED + programOffset) * ((50 / NEOPIXEL_COUNT) + 170), 50);
+      strip.setPixelColor(sparkleLED, hsi2rgbw(hue, saturation, globalIntensity));
+
+      // Run the sparkle for a few frames, then reinit
+      if (sparkleFrame >= SPARKLE_FRAMES) {
+        sparkleDelay = random(1000, 3000);
+        sparkleLED = random(NEOPIXEL_COUNT);
+        sparkleFrame = 0;
+        sparkleTimer = millis();
+      } else {
+        sparkleFrame++;
+      }
+    }
+    strip.show();
+
+    programOffset = fmod(360 + programOffset - 0.25, 360);
+    updateTimer = millis();
+  }
 }
 
 void runProgramDance(bool first) {
