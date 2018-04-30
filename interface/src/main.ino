@@ -326,12 +326,18 @@ void sendProgram(String newClientId) {
 }
 
 void cancelLED(bool state) {
-  buttonStrip.setPixelColor(0, state ? (currentProgram != displayProgram) ? cancelColor : whiteColor : blackColor);
+  buttonStrip.setPixelColor(
+    0,
+    state ? (currentProgram != displayProgram) ? cancelColor : whiteColor : blackColor
+  );
   buttonStrip.show();
 }
 
 void acceptLED(bool state) {
-  buttonStrip.setPixelColor(1, state ? (currentProgram != displayProgram) ? acceptColor : whiteColor : blackColor);
+  buttonStrip.setPixelColor(
+    1,
+    state ? (currentProgram != displayProgram) ? acceptColor : whiteColor : blackColor
+  );
   buttonStrip.show();
 }
 
@@ -353,9 +359,43 @@ void runProgramWhite(bool first) {
 }
 
 void runProgramCandle(bool first) {
-  uint32_t color = hsi2rgbw(60, 0.5, globalIntensity);
-  for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
-  strip.show();
+  static unsigned long updateTimer = millis();
+  static uint8_t frameCounter = UINT8_MAX;
+  static uint8_t nextLevel = 15;
+  static uint8_t lastLevel = 15;
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  if (first || updateTimeDiff > (FRAME_DELAY_MS)) {
+    float displayLevel;
+    if (first || frameCounter >= 3) { // every n frames
+      lastLevel = nextLevel;
+      nextLevel = random(4, 48);
+      nextLevel = nextLevel >= 15 ? 15 : nextLevel; // 66% full on, remainder even over lower levels
+      displayLevel = lastLevel; // Set the current level to the
+      frameCounter = 0;
+    } else {
+      // Tick from last level to new (next) level over n frames
+      displayLevel = floatmap(frameCounter, 0, 3, lastLevel, nextLevel);
+    }
+
+    // green-high 21, 0.6; green-mid 19, 0.9; green-low 15, 0.9
+    float hue = floatmap(displayLevel, 0, 15, 20, 30);
+    float saturation = floatmap(displayLevel, 0, 15, 0.8, 0.6);
+    float intensity = floatmap(displayLevel, 0, 15, globalIntensity * 0.75, globalIntensity);
+
+    // Find the tip color and the edge color
+    uint32_t centerColor = hsi2rgbw(hue, saturation, intensity);
+    uint32_t edgeColor = hsi2rgbw(hue - 5, saturation, intensity / 2.0);
+
+    // Write them out
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) {
+      strip.setPixelColor(i, i % 4 ? centerColor : edgeColor);
+    }
+    strip.show();
+
+    frameCounter++;
+    updateTimer = millis();
+  }
 }
 
 void runProgramRainbow(bool first) {
@@ -374,12 +414,14 @@ void runProgramRainbow(bool first) {
   }
 }
 
+// TODO: Implement
 void runProgramTwinkle(bool first) {
   uint32_t color = hsi2rgbw(200, 1, globalIntensity);
   for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
   strip.show();
 }
 
+// TODO: Implement
 void runProgramNight(bool first) {
   uint32_t color = hsi2rgbw(250, 1, globalIntensity);
   for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
@@ -505,8 +547,10 @@ void buttonLoop() {
   }
 
   if (acceptButton.wasReleased()) {
-    currentProgram = displayProgram;
-    sendProgram();
+    if (displayProgram != currentProgram) {
+      currentProgram = displayProgram;
+      sendProgram();
+    }
   }
 }
 
